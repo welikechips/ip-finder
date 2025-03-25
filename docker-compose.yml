@@ -1,0 +1,9 @@
+services:
+  ip-tools:
+    build: .
+    container_name: ip-tools
+    ports:
+      - "8090:80"
+    volumes:
+      - ./results:/results
+    restart: unless-stopped
