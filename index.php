@@ -1,199 +1,43 @@
 <?php
 /**
- * Enhanced External IP Address Finder - SECURE VERSION
+ * Enhanced External IP Address Finder - SECURE VERSION (Improved)
  *
  * A web application to find your external IP address and hostname
  * Works with VPNs and proxies by checking various HTTP headers
  */
 
+// Start session for rate limiting and CSRF protection
+session_start();
+
+// Include shared utility functions
+require_once 'utils.php';
+
+// Generate CSRF token if not exists
+if (!isset($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 // Set secure headers with more permissive CSP that still maintains security
-header("Content-Security-Policy: default-src 'self'; connect-src 'self' https://api.ipify.org https://ipinfo.io https://api.ip.sb https://api.myip.com; script-src 'self'; style-src 'self'; frame-src https://api.ipify.org; img-src 'self' data:;");
+header("Content-Security-Policy: default-src 'self'; connect-src 'self' https://api.ipify.org https://ipinfo.io https://api.ip.sb https://api.myip.com; script-src 'self' 'nonce-".htmlspecialchars($_SESSION['csrf_token'])."'; style-src 'self'; frame-src https://api.ipify.org; img-src 'self' data:;");
 header("X-Frame-Options: DENY");
 header("X-Content-Type-Options: nosniff");
 header("Referrer-Policy: strict-origin-when-cross-origin");
 header("Permissions-Policy: geolocation=(), microphone=(), camera=()");
 
-// Start session for rate limiting
-session_start();
+// Apply rate limiting
+if (!enforceRateLimit('main_rate_limit', 10, 60)) {
+    header('HTTP/1.1 429 Too Many Requests');
+    echo "Rate limit exceeded. Please try again later.";
+    exit;
+}
 
-// Simple rate limiting function
-function enforceRateLimit() {
-    $maxRequests = 10;
-    $timeWindow = 60; // 60 seconds
-
-    if (!isset($_SESSION['rate_limit'])) {
-        $_SESSION['rate_limit'] = [
-            'count' => 0,
-            'first_request' => time()
-        ];
-    }
-
-    // Reset counter if time window has passed
-    if (time() - $_SESSION['rate_limit']['first_request'] > $timeWindow) {
-        $_SESSION['rate_limit'] = [
-            'count' => 0,
-            'first_request' => time()
-        ];
-    }
-
-    // Increment counter
-    $_SESSION['rate_limit']['count']++;
-
-    // Check if limit exceeded
-    if ($_SESSION['rate_limit']['count'] > $maxRequests) {
-        header('HTTP/1.1 429 Too Many Requests');
-        echo "Rate limit exceeded. Please try again later.";
+// Verify CSRF token on POST requests
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        header('HTTP/1.1 403 Forbidden');
+        echo "CSRF validation failed";
         exit;
     }
-}
-
-// Apply rate limiting
-enforceRateLimit();
-
-// Function to get the client's real IP address considering proxies and VPNs
-function getClientIP() {
-    // Define trusted proxies
-    $trustedProxies = [
-        // Add your trusted proxy IPs here
-        '127.0.0.1',
-        // '10.0.0.1',
-        // '10.0.0.2',
-    ];
-
-    // Always trust REMOTE_ADDR as a starting point
-    $clientIP = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
-
-    // Only consider X-Forwarded-For if from trusted reverse proxies
-    if (isset($_SERVER['HTTP_X_FORWARDED_FOR']) && in_array($clientIP, $trustedProxies)) {
-        $ips = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
-        $forwardedIP = trim($ips[0]);
-        if (filter_var($forwardedIP, FILTER_VALIDATE_IP)) {
-            return $forwardedIP;
-        }
-    }
-
-    // Validate the IP format
-    if (!filter_var($clientIP, FILTER_VALIDATE_IP)) {
-        return '0.0.0.0';
-    }
-
-    return $clientIP;
-}
-
-// Function to validate JSON string
-function isValidJson($string) {
-    json_decode($string);
-    return (json_last_error() === JSON_ERROR_NONE);
-}
-
-// Function to get the external IP address from API services
-function getExternalIP() {
-    // Fixed list of trusted API endpoints - no user input allowed
-    $apis = [
-        'https://api.ipify.org?format=json',
-        'https://ipinfo.io/json',
-        'https://api.ip.sb/jsonip',
-        'https://api.myip.com'
-    ];
-
-    foreach ($apis as $api) {
-        try {
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, $api);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true); // Ensure SSL verification is enabled
-            curl_setopt($ch, CURLOPT_USERAGENT, 'IP Finder/1.0');
-            $response = curl_exec($ch);
-            $error = curl_error($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-
-            if ($httpCode == 200 && !empty($response)) {
-                // Validate JSON structure before parsing
-                if (!isValidJson($response)) {
-                    continue;
-                }
-
-                $data = json_decode($response, true);
-
-                // Validate expected schema
-                if (!isset($data['ip']) && !isset($data['query'])) {
-                    continue;
-                }
-
-                // Extract and validate IP
-                $ip = isset($data['ip']) ? $data['ip'] : $data['query'];
-                if (!filter_var($ip, FILTER_VALIDATE_IP)) {
-                    continue;
-                }
-
-                return ['success' => true, 'ip' => $ip];
-            }
-        } catch (Exception $e) {
-            continue; // Try the next API
-        }
-    }
-
-    return ['success' => false, 'message' => 'Failed to retrieve external IP address'];
-}
-
-// Function to get hostname from IP - using PHP's built-in function only
-function resolveHostname($ip) {
-    // Validate IP format first
-    if (!filter_var($ip, FILTER_VALIDATE_IP)) {
-        return null;
-    }
-
-    // Use PHP's built-in function (no shell commands)
-    $hostname = gethostbyaddr($ip);
-
-    // If hostname is the same as IP, no DNS record exists
-    if ($hostname === $ip) {
-        return null;
-    }
-
-    return $hostname;
-}
-
-// Get additional IP information using ipinfo.io
-function getIPInfo($ip) {
-    // Validate IP format first
-    if (!filter_var($ip, FILTER_VALIDATE_IP)) {
-        return null;
-    }
-
-    try {
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, "https://ipinfo.io/{$ip}/json");
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true); // Ensure SSL verification is enabled
-        curl_setopt($ch, CURLOPT_USERAGENT, 'IP Finder/1.0');
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($httpCode == 200 && !empty($response)) {
-            // Validate JSON before parsing
-            if (!isValidJson($response)) {
-                return null;
-            }
-
-            $data = json_decode($response, true);
-
-            // Additional validation of expected fields
-            if (!isset($data['ip']) || !filter_var($data['ip'], FILTER_VALIDATE_IP)) {
-                return null;
-            }
-
-            return $data;
-        }
-    } catch (Exception $e) {
-        // Silent fail
-    }
-
-    return null;
 }
 
 // Clear the output buffer to prevent var_dump from showing
@@ -206,7 +50,7 @@ $clientIP = getClientIP();
 $externalIPData = getExternalIP();
 $externalIP = $externalIPData['success'] ? $externalIPData['ip'] : 'Unknown';
 
-// Get hostname for both IPs
+// Get hostname for both IPs with enhanced lookup
 $clientHostname = $clientIP ? resolveHostname($clientIP) : null;
 $externalHostname = $externalIPData['success'] ? resolveHostname($externalIP) : null;
 
@@ -215,31 +59,6 @@ $ipInfo = $externalIPData['success'] ? getIPInfo($externalIP) : null;
 
 // Clear any output buffer
 ob_end_clean();
-
-// Better proxy detection logic - accounts for NAT routers
-// Local IP ranges
-$localIPRanges = [
-    '/^192\.168\./',
-    '/^10\./',
-    '/^172\.(1[6-9]|2[0-9]|3[0-1])\./',
-    '/^127\./',
-    '/^169\.254\./',
-    '/^::1$/',
-    '/^fc00::/'
-];
-
-// Check if an IP is a local network IP
-function isLocalIP($ip) {
-    global $localIPRanges;
-
-    foreach ($localIPRanges as $range) {
-        if (preg_match($range, $ip)) {
-            return true;
-        }
-    }
-
-    return false;
-}
 
 // Detect if using VPN by checking if:
 // 1. The client IP is NOT a local IP AND
@@ -275,19 +94,19 @@ $usingProxy = (!isLocalIP($clientIP) && $clientIP !== $externalIP && $clientIP !
                 <div class="ip-row">
                     <span class="ip-label">IP Address:</span>
                     <span class="ip-value">
-                            <?php echo htmlspecialchars($externalIP); ?>
-                        </span>
+                        <?php echo htmlspecialchars($externalIP); ?>
+                    </span>
                 </div>
 
                 <div class="ip-row">
                     <span class="ip-label">Hostname:</span>
                     <span class="ip-value">
-                            <?php if ($externalHostname): ?>
-                                <?php echo htmlspecialchars($externalHostname); ?>
-                            <?php else: ?>
-                                <i>No hostname found</i>
-                            <?php endif; ?>
-                        </span>
+                        <?php if ($externalHostname): ?>
+                            <?php echo htmlspecialchars($externalHostname); ?>
+                        <?php else: ?>
+                            <i>No hostname found</i>
+                        <?php endif; ?>
+                    </span>
                 </div>
             <?php else: ?>
                 <div class="ip-row">
@@ -380,6 +199,8 @@ $usingProxy = (!isLocalIP($clientIP) && $clientIP !== $externalIP && $clientIP !
     </div>
 
     <form method="post" id="ip-form">
+        <!-- Add CSRF token to form -->
+        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
         <button type="submit" class="refresh-btn">Refresh Information</button>
     </form>
 
@@ -389,7 +210,7 @@ $usingProxy = (!isLocalIP($clientIP) && $clientIP !== $externalIP && $clientIP !
     </div>
 </div>
 
-<!-- External JavaScript file -->
-<script src="public/js/ip-finder.js"></script>
+<!-- External JavaScript file with enhanced security -->
+<script nonce="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>" src="public/js/ip-finder.js"></script>
 </body>
 </html>

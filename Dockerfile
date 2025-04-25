@@ -24,6 +24,8 @@ RUN mkdir -p /var/www/html/public/css /var/www/html/public/js
 
 # Copy PHP application files
 COPY index.php /var/www/html/
+COPY hostname-lookup.php /var/www/html/
+COPY utils.php /var/www/html/
 COPY public/css/styles.css /var/www/html/public/css/
 COPY public/js/ip-finder.js /var/www/html/public/js/
 
