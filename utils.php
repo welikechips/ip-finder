@@ -119,24 +119,6 @@ function getExternalIP() {
     return ['success' => false, 'message' => 'Failed to retrieve external IP address'];
 }
 
-// Function to get hostname from IP - using PHP's built-in function only
-function resolveHostname($ip) {
-    // Validate IP format first
-    if (!filter_var($ip, FILTER_VALIDATE_IP)) {
-        return null;
-    }
-
-    // Use PHP's built-in function (no shell commands)
-    $hostname = gethostbyaddr($ip);
-
-    // If hostname is the same as IP, no DNS record exists
-    if ($hostname === $ip) {
-        return $ip;
-    }
-
-    return $hostname;
-}
-
 // Get additional IP information using ipinfo.io
 function getIPInfo($ip)
 {
@@ -179,119 +161,74 @@ function getIPInfo($ip)
 }
 
 // Enhanced function to get hostname from IP with multiple methods
-//function resolveHostname($ip) {
-//    // Validate IP format first
-//    if (!validateIP($ip)) {
-//        return null;
-//    }
-//
-//    // Method 1: Use PHP's built-in function
-//    $hostname = gethostbyaddr($ip);
-//
-//    // If hostname is not the same as IP, we found something
-//    if ($hostname !== $ip) {
-//        return $hostname;
-//    }
-//
-//    // Method 2: Use DNS lookup with PTR record
-//    try {
-//        // Create reverse DNS lookup query
-//        $reversedIP = implode('.', array_reverse(explode('.', $ip))) . '.in-addr.arpa';
-//
-//        // Attempt PTR record lookup
-//        $dnsRecords = dns_get_record($reversedIP, DNS_PTR);
-//
-//        if (!empty($dnsRecords) && isset($dnsRecords[0]['target'])) {
-//            return $dnsRecords[0]['target'];
-//        }
-//    } catch (Exception $e) {
-//        // Silent fail, continue to next method
-//    }
-//
-//    // Method 3: Use an external API as last resort
-//    try {
-//        $ch = curl_init();
-//        // Using ipinfo.io which is good at hostname lookups
-//        curl_setopt($ch, CURLOPT_URL, "https://ipinfo.io/{$ip}/json");
-//        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-//        curl_setopt($ch, CURLOPT_TIMEOUT, 3);
-//        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-//        curl_setopt($ch, CURLOPT_USERAGENT, 'IP Finder/1.0');
-//        $response = curl_exec($ch);
-//        curl_close($ch);
-//
-//        if (!empty($response)) {
-//            // Validate JSON response
-//            $data = json_decode($response, true);
-//            if (json_last_error() === JSON_ERROR_NONE && isset($data['hostname'])) {
-//                return $data['hostname'];
-//            }
-//        }
-//    } catch (Exception $e) {
-//        // Silent fail
-//    }
-//
-//    // Last attempt - try to specifically handle AWS EC2 instances
-//    // AWS EC2 hostnames often follow the pattern: ec2-IP-ADDRESS.compute-X.amazonaws.com
-//    // where IP-ADDRESS has dashes instead of dots
-//    if (strpos($ip, '.compute-') === false) { // Avoid infinite recursion
-//        $dashIP = str_replace('.', '-', $ip);
-//        $possibleEC2Hostname = "ec2-{$dashIP}.compute-1.amazonaws.com";
-//
-//        // Validate if this hostname resolves back to the IP
-//        $resolvedIP = gethostbyname($possibleEC2Hostname);
-//        if ($resolvedIP !== $possibleEC2Hostname && $resolvedIP === $ip) {
-//            return $possibleEC2Hostname;
-//        }
-//    }
-//
-//    return null;
-//}
+function resolveHostname($ip) {
+    // Validate IP format first
+    if (!validateIP($ip)) {
+        return null;
+    }
 
-// Get additional IP information using ipinfo.io - enhanced with security
-//function getIPInfo($ip) {
-//    // Validate IP format first with enhanced validation
-//    if (!validateIP($ip)) {
-//        return null;
-//    }
-//
-//    try {
-//        $ch = curl_init();
-//        // Ensure we're constructing a valid URL with a sanitized IP parameter
-//        $url = "https://ipinfo.io/" . urlencode($ip) . "/json";
-//        curl_setopt($ch, CURLOPT_URL, $url);
-//        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-//        curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-//        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true); // Ensure SSL verification is enabled
-//        curl_setopt($ch, CURLOPT_USERAGENT, 'IP Finder/1.0');
-//        // Prevent SSRF by setting allowed protocols
-//        curl_setopt($ch, CURLOPT_PROTOCOLS, CURLPROTO_HTTPS);
-//        curl_setopt($ch, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTPS);
-//        $response = curl_exec($ch);
-//        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-//        curl_close($ch);
-//
-//        if ($httpCode == 200 && !empty($response)) {
-//            // Validate JSON before parsing
-//            if (!isValidJson($response)) {
-//                return null;
-//            }
-//
-//            $data = json_decode($response, true);
-//
-//            // Additional validation of expected fields
-//            if (!isset($data['ip']) || !validateIP($data['ip'])) {
-//                return null;
-//            }
-//
-//            return $data;
-//        }
-//    } catch (Exception $e) {
-//        // Silent fail
-//    }
-//
-//    return null;
-//}
+    // Method 1: Use PHP's built-in function
+    $hostname = gethostbyaddr($ip);
+
+    // If hostname is not the same as IP, we found something
+    if ($hostname !== $ip) {
+        return $hostname;
+    }
+
+    // Method 2: Use DNS lookup with PTR record
+    try {
+        // Create reverse DNS lookup query
+        $reversedIP = implode('.', array_reverse(explode('.', $ip))) . '.in-addr.arpa';
+
+        // Attempt PTR record lookup
+        $dnsRecords = dns_get_record($reversedIP, DNS_PTR);
+
+        if (!empty($dnsRecords) && isset($dnsRecords[0]['target'])) {
+            return $dnsRecords[0]['target'];
+        }
+    } catch (Exception $e) {
+        // Silent fail, continue to next method
+    }
+
+    // Method 3: Use an external API as last resort
+    try {
+        $ch = curl_init();
+        // Using ipinfo.io which is good at hostname lookups
+        curl_setopt($ch, CURLOPT_URL, "https://ipinfo.io/{$ip}/json");
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 3);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'IP Finder/1.0');
+        $response = curl_exec($ch);
+        curl_close($ch);
+
+        if (!empty($response)) {
+            // Validate JSON response
+            $data = json_decode($response, true);
+            if (json_last_error() === JSON_ERROR_NONE && isset($data['hostname'])) {
+                return $data['hostname'];
+            }
+        }
+    } catch (Exception $e) {
+        // Silent fail
+    }
+
+    // Last attempt - try to specifically handle AWS EC2 instances
+    // AWS EC2 hostnames often follow the pattern: ec2-IP-ADDRESS.compute-X.amazonaws.com
+    // where IP-ADDRESS has dashes instead of dots
+    if (strpos($ip, '.compute-') === false) { // Avoid infinite recursion
+        $dashIP = str_replace('.', '-', $ip);
+        $possibleEC2Hostname = "ec2-{$dashIP}.compute-1.amazonaws.com";
+
+        // Validate if this hostname resolves back to the IP
+        $resolvedIP = gethostbyname($possibleEC2Hostname);
+        if ($resolvedIP !== $possibleEC2Hostname && $resolvedIP === $ip) {
+            return $possibleEC2Hostname;
+        }
+    }
+
+    return null;
+}
 
 // Simple rate limiting function
 function enforceRateLimit($key = 'rate_limit', $maxRequests = 10, $timeWindow = 60) {
