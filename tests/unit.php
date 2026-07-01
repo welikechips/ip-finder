@@ -89,5 +89,25 @@ check(enforceRateLimit('t', 3, 60) === true,          'request 3 at limit');
 check(enforceRateLimit('t', 3, 60) === false,         'request 4 exceeds limit');
 check(enforceRateLimit('other', 3, 60) === true,      'a separate key has its own budget');
 
+echo "normalizeIpwhois (geolocation fallback)\n";
+// Synthetic sample using RFC-documentation values only (TEST-NET IP, doc ASN) — no real IPs.
+$who = [
+    'ip' => '203.0.113.9', 'success' => true,
+    'city' => 'Testville', 'region' => 'Test Region',
+    'country' => 'Exampleland', 'country_code' => 'US',
+    'connection' => ['asn' => 64500, 'org' => 'Example Networks', 'isp' => 'Example ISP'],
+    'timezone' => ['id' => 'America/New_York', 'abbr' => 'EDT'],
+];
+$n = normalizeIpwhois($who);
+is_eq($n['city'], 'Testville',                 'city mapped');
+is_eq($n['country'], 'US',                     'country_code preferred for country');
+is_eq($n['org'], 'AS64500 Example Networks',   'org built from asn + org (ipinfo style)');
+is_eq($n['timezone'], 'America/New_York',      'timezone from timezone.id');
+is_eq(normalizeIpwhois(['success' => true, 'city' => 'X', 'connection' => ['isp' => 'SoloISP']])['org'],
+      'SoloISP',                               'org falls back to isp when asn/org absent');
+check(normalizeIpwhois(['success' => false]) === null, 'unsuccessful response -> null');
+check(normalizeIpwhois(['success' => true]) === null,  'no city -> null');
+check(normalizeIpwhois('nope') === null,               'non-array -> null');
+
 echo "\n" . $GLOBALS['__tests'] . " checks, " . $GLOBALS['__fails'] . " failed\n";
 exit($GLOBALS['__fails'] > 0 ? 1 : 0);

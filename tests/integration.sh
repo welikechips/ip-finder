@@ -53,6 +53,10 @@ code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/")
 curl -s "$BASE/" | grep -q "$GIT_SHORT" \
   && ok "version rendered (git $GIT_SHORT)" || bad "version SHA $GIT_SHORT not rendered"
 
+# 1c. Timestamp shows Eastern timezone (EDT/EST)
+curl -s "$BASE/" | grep -qE 'Last updated:.*(EDT|EST)' \
+  && ok "timestamp shows Eastern tz (EDT/EST)" || bad "timestamp missing Eastern tz"
+
 # 2. True-Client-IP is reported as the visitor IP
 curl -s -H "True-Client-IP: 1.1.1.1" "$BASE/" | grep -q "1.1.1.1" \
   && ok "True-Client-IP surfaced as visitor IP" || bad "True-Client-IP not surfaced"
