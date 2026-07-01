@@ -10,3 +10,9 @@ services:
     dockerfilePath: ./Dockerfile
     healthCheckPath: /
     autoDeploy: true          # redeploy on every push to the default branch
+    envVars:
+      # Optional: authenticates ipinfo.io for reliable geolocation from Render's
+      # datacenter egress. sync: false = the value is set in the Render dashboard,
+      # never committed here. Without it, getIPInfo() falls back to ipwho.is.
+      - key: IPINFO_TOKEN
+        sync: false
