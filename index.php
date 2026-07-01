@@ -22,7 +22,7 @@ if (!isset($_SESSION['csrf_token'])) {
 }
 
 // Set secure headers with more permissive CSP that still maintains security
-header("Content-Security-Policy: default-src 'self'; connect-src 'self' https://api.ipify.org https://ipinfo.io https://api.ip.sb https://api.myip.com; script-src 'self' 'nonce-".htmlspecialchars($_SESSION['csrf_token'])."'; style-src 'self'; frame-src https://api.ipify.org; img-src 'self' data:;");
+header("Content-Security-Policy: default-src 'self'; connect-src 'self' https://api.ipify.org https://ipinfo.io https://api.ip.sb https://api.myip.com; script-src 'self' 'nonce-" . htmlspecialchars($_SESSION['csrf_token']) . "'; style-src 'self'; frame-src https://api.ipify.org; img-src 'self' data:;");
 header("X-Frame-Options: DENY");
 header("X-Content-Type-Options: nosniff");
 header("Referrer-Policy: strict-origin-when-cross-origin");
@@ -75,7 +75,7 @@ $usingProxy = false;
 
 // App version = the deployed git commit. Render injects RENDER_GIT_COMMIT at runtime;
 // GIT_COMMIT can be baked at build time; otherwise it's a local/dev build.
-$appCommit  = getenv('RENDER_GIT_COMMIT') ?: getenv('GIT_COMMIT') ?: '';
+$appCommit = getenv('RENDER_GIT_COMMIT') ?: getenv('GIT_COMMIT') ?: '';
 $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
 ?>
 
@@ -84,13 +84,13 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Enhanced IP Finder</title>
+    <title>Just the tIP</title>
     <link rel="stylesheet" href="public/css/styles.css">
     <link rel="icon" href="data:,">
 </head>
 <body>
 <div class="container">
-    <h1>Enhanced IP Finder</h1>
+    <h1>Just the t<span class="ip-accent">IP</span></h1>
 
     <div class="tab-container">
         <div class="tab active" id="server-tab">Server Detection</div>
@@ -127,7 +127,8 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
                 </div>
             <?php endif; ?>
 
-            <p class="note-text">Note: This is the IP address your connection presents to this server. Browser-based proxies (e.g. FoxyProxy) may differ — see Browser Detection.</p>
+            <p class="note-text">Note: This is the IP address your connection presents to this server. Browser-based
+                proxies (e.g. FoxyProxy) may differ — see Browser Detection.</p>
         </div>
 
         <!-- Proxy/VPN Detection -->
@@ -181,7 +182,8 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
     <div id="client-side" class="tab-content">
         <div class="client-side">
             <h2>Your External IP (Browser Detection)</h2>
-            <p>This detection method uses your browser to detect the IP, which works better with browser-based proxies like FoxyProxy.</p>
+            <p>This detection method uses your browser to detect the IP, which works better with browser-based proxies
+                like FoxyProxy.</p>
 
             <div id="loading">
                 <div class="spinner"></div>
@@ -218,10 +220,14 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
 
     <div class="info-footer">
         <p>This tool shows your external IP address, hostname, and detects if you're using a VPN or proxy.</p>
+        <p class="privacy">🔒 Privacy — We don't log or store your IP, hostname, or lookups. No database, and access
+            logging is disabled. Your IP is only sent to third-party services to perform the lookup, never kept
+            here.</p>
         <p>Last updated: <?php echo date('Y-m-d H:i:s T'); ?></p>
         <p>Version:
             <?php if ($appCommit !== ''): ?>
-                <a href="https://github.com/welikechips/ip-finder/commit/<?php echo htmlspecialchars($appCommit); ?>" target="_blank" rel="noopener noreferrer"><?php echo htmlspecialchars($appVersion); ?></a>
+                <a href="https://github.com/welikechips/ip-finder/commit/<?php echo htmlspecialchars($appCommit); ?>"
+                   target="_blank" rel="noopener noreferrer"><?php echo htmlspecialchars($appVersion); ?></a>
             <?php else: ?>
                 <?php echo htmlspecialchars($appVersion); ?>
             <?php endif; ?>
