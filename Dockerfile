@@ -1,4 +1,4 @@
-FROM php:7.4-apache
+FROM php:8.3-apache
 
 # Install Python and required dependencies
 RUN apt-get update && \
@@ -15,6 +15,10 @@ RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN apt-get update && apt-get install -y \
     libcurl4-openssl-dev \
     && docker-php-ext-install curl
+
+# Enable Apache mod_remoteip so the app sees the real client IP behind the Caddy proxy
+COPY deploy/remoteip.conf /etc/apache2/conf-available/remoteip.conf
+RUN a2enmod remoteip && a2enconf remoteip
 
 # Set working directory
 WORKDIR /var/www/html
@@ -36,22 +40,15 @@ RUN ln -sf /var/www/html/index.php /var/www/html/whats-my-ip.php
 COPY tor_check.py /usr/local/bin/
 RUN chmod +x /usr/local/bin/tor_check.py
 
-# Create a script to manage both services
-RUN echo '#!/bin/bash\n\
-echo "Starting Apache service..."\n\
-apache2-foreground &\n\
-echo "Both services are now running."\n\
-echo "Access the IP Finder at: http://localhost:80/"\n\
-echo "Or using the old URL: http://localhost:80/whats-my-ip.php"\n\
-echo "Run Tor Check with: docker exec -it container_name tor_check.py"\n\
-tail -f /dev/null' > /usr/local/bin/start-services.sh && \
-    chmod +x /usr/local/bin/start-services.sh
-
 # Set proper Apache permissions
 RUN chown -R www-data:www-data /var/www/html
 
-# Expose port for web server
+# Expose the default port (the platform overrides via $PORT at runtime).
 EXPOSE 80
 
-# Set the entrypoint
-ENTRYPOINT ["/usr/local/bin/start-services.sh"]
+# Entrypoint makes Apache listen on $PORT (Render assigns it; defaults to 80 locally),
+# then execs apache2-foreground so Apache is PID 1 -> clean signals + accurate health.
+# The Tor checker is a manual CLI: `docker exec -it <container> python /usr/local/bin/tor_check.py`.
+COPY deploy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

@@ -43,28 +43,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Clear the output buffer to prevent var_dump from showing
 ob_start();
 
-// Get client IP (from headers - useful for proxy detection)
+// Determine the visitor's IP. Behind our Caddy reverse proxy, Apache's mod_remoteip
+// rewrites REMOTE_ADDR from X-Forwarded-For, so getClientIP() is the real client IP.
 $clientIP = getClientIP();
+$clientIsPublic = ($clientIP && !isLocalIP($clientIP) && $clientIP !== '0.0.0.0');
 
-// Get external IP (from API services)
-$externalIPData = getExternalIP();
+if ($clientIsPublic) {
+    // Authoritative: the address the visitor is actually connecting from.
+    $externalIPData = ['success' => true, 'ip' => $clientIP];
+} else {
+    // No trusted proxy in front (e.g. local dev) — fall back to a server-side lookup.
+    $externalIPData = getExternalIP();
+}
 $externalIP = $externalIPData['success'] ? $externalIPData['ip'] : 'Unknown';
 
-// Get hostname for both IPs with enhanced lookup
-$clientHostname = $clientIP ? resolveHostname($clientIP) : null;
+// Hostname + geolocation for the IP we're displaying.
 $externalHostname = $externalIPData['success'] ? resolveHostname($externalIP) : null;
-
-// Get additional information for the external IP
 $ipInfo = $externalIPData['success'] ? getIPInfo($externalIP) : null;
 
 // Clear any output buffer
 ob_end_clean();
 
-// Detect if using VPN by checking if:
-// 1. The client IP is NOT a local IP AND
-// 2. The client IP is different from the external IP
-// This will only show VPN/proxy warning for actual proxies, not for normal NAT router setups
-$usingProxy = (!isLocalIP($clientIP) && $clientIP !== $externalIP && $clientIP !== '0.0.0.0' && $externalIP !== 'Unknown');
+// We now report the client IP directly, so the old server-vs-client proxy
+// comparison no longer applies — no false "VPN detected" banner.
+$clientHostname = null;
+$usingProxy = false;
 ?>
 
 <!DOCTYPE html>
@@ -115,7 +118,7 @@ $usingProxy = (!isLocalIP($clientIP) && $clientIP !== $externalIP && $clientIP !
                 </div>
             <?php endif; ?>
 
-            <p class="note-text">Note: This detection method uses server-side API calls and may not reflect browser proxy settings.</p>
+            <p class="note-text">Note: This is the IP address your connection presents to this server. Browser-based proxies (e.g. FoxyProxy) may differ — see Browser Detection.</p>
         </div>
 
         <!-- Proxy/VPN Detection -->

@@ -1,0 +1,12 @@
+# Render Blueprint — deploys IP Finder as a Docker web service on the free plan.
+# In Render: New > Blueprint, connect the welikechips/ip-finder repo, and Render reads this file.
+# Render terminates TLS and issues the cert for the custom domain, so no Caddy is needed here.
+services:
+  - type: web
+    name: ip-finder
+    runtime: docker
+    plan: free
+    region: virginia          # closest Render US region to Maryland
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    autoDeploy: true          # redeploy on every push to the default branch
