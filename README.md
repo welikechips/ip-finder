@@ -1,178 +1,108 @@
-# IP Tools Project - Docker Edition
+# IP Tools
 
-This project contains two tools for checking and monitoring your IP address information, packaged in a Docker container for easy deployment:
+Two tools for inspecting your network identity:
 
-1. **External IP Finder** - A PHP web application that displays your public IP address
-2. **Tor Connection Checker** - A Python command-line tool that verifies if your connection is properly routing through the Tor network
+1. **Enhanced IP Finder** — a PHP web app that shows your external IP, reverse-DNS hostname, geolocation, and VPN/proxy
+   hints. Live at **https://ip.jiveturkey.rocks**.
+2. **Tor Connection Checker** — a standalone Python CLI that verifies whether your connection is routing through Tor,
+   and checks for DNS leaks.
 
-## Table of Contents
+The web app is the deployed product; the Tor checker is a diagnostic CLI baked into the same Docker image.
 
-- [Requirements](#requirements)
-- [Quick Start](#quick-start)
-- [Project Structure](#project-structure)
-- [Using the External IP Finder](#using-the-external-ip-finder)
-- [Using the Tor Connection Checker](#using-the-tor-connection-checker)
-- [Understanding the Tor Checker Results](#understanding-the-tor-checker-results)
-- [Security Notes](#security-notes)
-- [Troubleshooting](#troubleshooting)
-- [Advanced Configuration](#advanced-configuration)
+## Live site
 
-## Requirements
+**https://ip.jiveturkey.rocks** — deployed on Render (free tier) from a Docker image built out of this repo. Every push
+to `main` auto-deploys. The footer shows the deployed git commit as the app's version.
 
-- Docker and Docker Compose
-- Internet connection
-- Tor Browser or Tor service (optional, only if you want to check Tor connections)
+## Enhanced IP Finder
 
-## Quick Start
+### Run locally
 
-1. **Clone this repository:**
-   ```bash
-   git clone https://github.com/yourusername/ip-tools.git
-   cd ip-tools
-   ```
+Requires Docker.
 
-2. **Build and start the Docker container:**
-   ```bash
-   docker-compose up -d
-   ```
-
-3. **Access the IP Finder web interface:**
-   Open your browser and navigate to:
-   ```
-   http://localhost:8090/whats-my-ip.php
-   ```
-
-4. **Run the Tor Connection Checker:**
-   ```bash
-   docker exec -it ip-tools tor_check.py
-   ```
-
-## Project Structure
-
-```
-.
-├── Dockerfile             # Docker configuration
-├── docker-compose.yml     # Docker Compose configuration
-├── whats-my-ip.php        # PHP External IP Finder
-├── tor_check.py           # Python Tor Connection Checker
-└── results/               # Directory for Tor checker JSON results
+```bash
+make dev     # build + run at http://localhost:8090 (bakes the git SHA as the version)
+make down    # stop it
 ```
 
-## Using the External IP Finder
+(`make dev` wraps `docker compose up -d --build`; run `make` to list all targets.)
 
-The External IP Finder is accessible through your web browser after starting the Docker container:
+### How it works
 
-1. Navigate to `http://localhost:8090/whats-my-ip.php`
-2. The page displays your current external IP address
-3. Click the "Refresh IP" button to update the displayed information
+The page offers two detection modes:
 
-**Features:**
-- Displays your current external IP address
-- Uses multiple fallback APIs to ensure reliability
-- Simple, responsive user interface
-- "Refresh IP" button to update the displayed information
-- Error handling when IP lookup fails
+- **Server Detection** (default) — the server reports the IP your connection presents to it. Behind a reverse proxy (the
+  Render/Cloudflare edge in production) it reads the real client IP from the `True-Client-IP` / `CF-Connecting-IP`
+  headers or the first `X-Forwarded-For` hop; for local/direct access it falls back to a server-side lookup against
+  public IP APIs.
+- **Browser Detection** — detects the IP from the browser itself (useful when a browser-only proxy such as FoxyProxy
+  differs from the OS route), then resolves the hostname via the `hostname-lookup.php` endpoint.
 
-## Using the Tor Connection Checker
+Security: the app sets a strict Content-Security-Policy and related headers, issues a CSRF token for the refresh form,
+and rate-limits requests per session.
 
-The Tor Connection Checker runs from the command line within the Docker container:
+## Tor Connection Checker
 
-1. Run the script with the default output location:
-   ```bash
-   docker exec -it ip-tools tor_check.py
-   ```
+A command-line tool (run inside the container) that reports on your Tor / DNS setup.
 
-2. Or specify a custom output file in the shared volume:
-   ```bash
-   docker exec -it ip-tools tor_check.py /results/my_check.json
-   ```
+```bash
+# default output
+docker exec -it ip-tools python /usr/local/bin/tor_check.py
 
-**Features:**
-- Detects if you're connected to the Tor network
-- Identifies your local and external IP addresses
-- Lists your DNS servers and classifies them as local or public
-- Checks if DNS requests are likely going through Tor (to prevent DNS leaks)
-- Tests DNS resolution for common domains
-- Provides recommendations based on the test results
-- Saves detailed results to a JSON file
-
-## Understanding the Tor Checker Results
-
-The Tor Connection Checker provides detailed information about your connection:
-
-- **Local IP**: Your device's IP address on the local network
-- **External IP**: Your public IP address as seen by external services
-- **Tor Status**: Whether you're successfully connected to the Tor network
-- **DNS Servers**: The DNS servers your system is configured to use
-- **DNS Through Tor Check**: Analysis of whether your DNS requests are likely going through Tor
-- **DNS Resolution Test**: Results of resolving test domains
-- **Recommendations**: Suggestions to improve your configuration
-
-The tool saves a detailed report in JSON format with a timestamp. These reports are saved to the `results/` directory which is mapped as a volume in the Docker container.
-
-## Security Notes
-
-- These tools are for educational and diagnostic purposes only.
-- The Docker container exposes the External IP Finder on port 8090 by default. Adjust this in `docker-compose.yml` if needed.
-- The Tor Connection Checker does not modify your system settings; it only reports on your current configuration.
-- For maximum privacy when using Tor, always use the official Tor Browser Bundle.
-- When checking Tor connections, you'll need to:
-    - Either configure your host system to use Tor
-    - Or run Tor Browser on your host machine before running the check
-
-## Troubleshooting
-
-### Container Issues
-
-- If the container doesn't start, check for port conflicts and adjust the port mapping in `docker-compose.yml`
-- To view container logs:
-  ```bash
-  docker-compose logs
-  ```
-
-### External IP Finder Issues
-
-- If you see "Error retrieving IP", check your internet connection and ensure the container has outbound access.
-- If the page doesn't load, verify that your container is running:
-  ```bash
-  docker ps | grep ip-tools
-  ```
-
-### Tor Connection Checker Issues
-
-- If the script shows you're not connected to Tor when you believe you should be, ensure Tor Browser or the Tor service is running on your host machine.
-- Remember that the Docker container itself is not routing through Tor by default - it's checking if your underlying connection is using Tor.
-
-## Advanced Configuration
-
-### Custom Port Mapping
-
-To change the port the IP Finder runs on, edit the `docker-compose.yml` file:
-
-```yaml
-ports:
-  - "your_preferred_port:80"
+# custom output file (writes into the mounted results/ volume)
+docker exec -it ip-tools python /usr/local/bin/tor_check.py /results/my_check.json
 ```
 
-### Using with a Tor Proxy Container
+> Note: `tor_check.py` imports `requests` (listed in `requirements.txt`) which is **not** installed in the image by
+> default — run `pip install requests` in the container first if needed.
 
-For a more complete setup, you can extend the Docker Compose configuration to include a Tor proxy container:
+**What it reports:**
 
-```yaml
-services:
-  ip-tools:
-    # existing configuration...
-    depends_on:
-      - tor-proxy
-  
-  tor-proxy:
-    image: dperson/torproxy
-    container_name: tor-proxy
-    restart: unless-stopped
+- Local and external IP addresses
+- Whether you're connected to the Tor network
+- Your DNS servers, classified as local vs public
+- Whether DNS requests are likely going through Tor (DNS-leak check)
+- DNS resolution tests for common domains
+- Recommendations, saved as a timestamped JSON report under `results/`
+
+The checker inspects your **host** connection — it does not route the container through Tor. Run Tor Browser or a Tor
+service on the host first.
+
+## Development
+
+```bash
+make test    # full suite: unit tests + integration (build, boot, curl the endpoints)
+make unit    # unit tests only (runs inside the php:8.3 image)
 ```
 
-With this setup, you can configure the Tor Connection Checker to use the Tor proxy container for its checks.
+These wrap `bash tests/integration.sh` and the unit runner. There is no test framework — `tests/unit.php` is a plain-PHP assertion runner (exit 1 on failure) and
+`tests/integration.sh` is a bash harness. CI (`.github/workflows/ci.yml`) runs the whole suite on every push and PR.
 
----
+## Deployment
 
-For more information on Tor and online privacy, visit [The Tor Project website](https://www.torproject.org/).
+Render builds the `Dockerfile` and runs the container as a web service (`render.yaml`, free plan).
+`deploy/docker-entrypoint.sh` makes Apache listen on Render's assigned `$PORT`. The custom domain `ip.jiveturkey.rocks`
+is a CNAME (DNS managed at Bluehost) pointing at the Render service; Render issues the TLS certificate. Free-tier
+services cold-start (~30–60s) after 15 minutes idle.
+
+## Project structure
+
+```
+index.php             # IP Finder web page (Server + Browser detection tabs)
+hostname-lookup.php   # JSON endpoint: reverse-DNS a given IP
+utils.php             # Shared PHP: IP validation, lookups, client-IP, rate limiting
+public/               # css + js assets
+tor_check.py          # Standalone Tor / DNS diagnostic CLI
+Dockerfile            # PHP 8.3 + Apache image (also carries the Tor CLI)
+docker-compose.yml    # Local dev (port 8090)
+Makefile              # Convenience targets (run `make` to list)
+render.yaml           # Render deployment blueprint
+deploy/               # Entrypoint ($PORT handling)
+tests/                # unit.php + integration.sh
+results/              # Tor checker JSON output (volume-mounted)
+```
+
+## Security note
+
+These tools are for educational and diagnostic use. For maximum privacy when checking Tor, use the official Tor Browser
+Bundle.

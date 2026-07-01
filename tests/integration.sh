@@ -27,7 +27,9 @@ cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
 echo "==> Building image"
-docker build -t "$IMAGE" . >/tmp/ci-build.log 2>&1 || { echo "build failed:"; tail -20 /tmp/ci-build.log; exit 1; }
+GIT_FULL="$(git rev-parse HEAD 2>/dev/null || echo 0000000000000000000000000000000000000000)"
+GIT_SHORT="${GIT_FULL:0:7}"
+docker build --build-arg GIT_COMMIT="$GIT_FULL" -t "$IMAGE" . >/tmp/ci-build.log 2>&1 || { echo "build failed:"; tail -20 /tmp/ci-build.log; exit 1; }
 
 echo "==> Unit tests (inside the PHP 8.3 image)"
 docker run --rm --entrypoint php -v "$PWD":/app -w /app "$IMAGE" tests/unit.php || bad "unit tests failed"
@@ -46,6 +48,10 @@ echo "==> HTTP endpoint checks"
 # 1. Home page serves
 code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/")
 [ "$code" = "200" ] && ok "GET / -> 200" || bad "GET / -> $code (want 200)"
+
+# 1b. Version (deployed git SHA) shows in the footer
+curl -s "$BASE/" | grep -q "$GIT_SHORT" \
+  && ok "version rendered (git $GIT_SHORT)" || bad "version SHA $GIT_SHORT not rendered"
 
 # 2. True-Client-IP is reported as the visitor IP
 curl -s -H "True-Client-IP: 1.1.1.1" "$BASE/" | grep -q "1.1.1.1" \
