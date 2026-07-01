@@ -1,6 +1,10 @@
 services:
   ip-tools:
-    build: .
+    build:
+      context: .
+      args:
+        # Baked into the version footer; `make dev` sets this to the real git SHA.
+        GIT_COMMIT: ${GIT_COMMIT:-}
     container_name: ip-tools
     ports:
       - "8090:80"

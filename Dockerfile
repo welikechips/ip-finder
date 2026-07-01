@@ -42,6 +42,11 @@ RUN chown -R www-data:www-data /var/www/html
 # Expose the default port (the platform overrides via $PORT at runtime).
 EXPOSE 80
 
+# App version: bake the git SHA if provided at build time (Render sets RENDER_GIT_COMMIT
+# at runtime instead). Kept late so changing it doesn't bust earlier build-cache layers.
+ARG GIT_COMMIT=""
+ENV GIT_COMMIT=$GIT_COMMIT
+
 # Entrypoint makes Apache listen on $PORT (Render assigns it; defaults to 80 locally),
 # then execs apache2-foreground so Apache is PID 1 -> clean signals + accurate health.
 # The Tor checker is a manual CLI: `docker exec -it <container> python /usr/local/bin/tor_check.py`.

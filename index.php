@@ -68,6 +68,11 @@ ob_end_clean();
 // comparison no longer applies — no false "VPN detected" banner.
 $clientHostname = null;
 $usingProxy = false;
+
+// App version = the deployed git commit. Render injects RENDER_GIT_COMMIT at runtime;
+// GIT_COMMIT can be baked at build time; otherwise it's a local/dev build.
+$appCommit  = getenv('RENDER_GIT_COMMIT') ?: getenv('GIT_COMMIT') ?: '';
+$appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
 ?>
 
 <!DOCTYPE html>
@@ -210,6 +215,13 @@ $usingProxy = false;
     <div class="info-footer">
         <p>This tool shows your external IP address, hostname, and detects if you're using a VPN or proxy.</p>
         <p>Last updated: <?php echo date('Y-m-d H:i:s'); ?></p>
+        <p>Version:
+            <?php if ($appCommit !== ''): ?>
+                <a href="https://github.com/welikechips/ip-finder/commit/<?php echo htmlspecialchars($appCommit); ?>" target="_blank" rel="noopener noreferrer"><?php echo htmlspecialchars($appVersion); ?></a>
+            <?php else: ?>
+                <?php echo htmlspecialchars($appVersion); ?>
+            <?php endif; ?>
+        </p>
     </div>
 </div>
 
