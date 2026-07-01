@@ -39,6 +39,12 @@ RUN chmod +x /usr/local/bin/tor_check.py
 # Set proper Apache permissions
 RUN chown -R www-data:www-data /var/www/html
 
+# Privacy: disable Apache access logging entirely so no visitor IPs are ever written
+# to logs. This backs the "we don't log or store your data" statement on the page.
+# Error logging stays for ops (it records no visitor IPs in normal operation).
+RUN sed -ri '/CustomLog/d' /etc/apache2/sites-available/000-default.conf \
+ && (a2disconf other-vhosts-access-log 2>/dev/null || true)
+
 # Expose the default port (the platform overrides via $PORT at runtime).
 EXPOSE 80
 

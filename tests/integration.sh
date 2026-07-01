@@ -57,6 +57,10 @@ curl -s "$BASE/" | grep -q "$GIT_SHORT" \
 curl -s "$BASE/" | grep -qE 'Last updated:.*(EDT|EST)' \
   && ok "timestamp shows Eastern tz (EDT/EST)" || bad "timestamp missing Eastern tz"
 
+# 1d. Privacy disclaimer is present
+curl -s "$BASE/" | grep -qi 'Privacy' \
+  && ok "privacy disclaimer shown" || bad "privacy disclaimer missing"
+
 # 2. True-Client-IP is reported as the visitor IP
 curl -s -H "True-Client-IP: 1.1.1.1" "$BASE/" | grep -q "1.1.1.1" \
   && ok "True-Client-IP surfaced as visitor IP" || bad "True-Client-IP not surfaced"
@@ -97,6 +101,14 @@ for _ in $(seq 1 7); do
 done
 rm -f "$jar"
 [ "$saw429" = 1 ] && ok "rate limit returns 429 when exceeded" || bad "rate limit never triggered"
+
+# 9. Privacy: access logging disabled -> no visitor requests recorded in the container logs
+#    (all the curls above would show up here if access logging were on)
+if docker logs "$NAME" 2>&1 | grep -qE '"(GET|POST) '; then
+  bad "access logging active (visitor requests appear in container logs)"
+else
+  ok "no access logging (no visitor requests in container logs)"
+fi
 
 echo
 echo "==> Integration: $PASS passed, $FAIL failed"

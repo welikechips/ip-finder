@@ -29,6 +29,19 @@ h1 {
     text-align: center;
 }
 
+/* Make the "IP" pop inside the "Just the tIP" wordmark */
+.ip-accent {
+    color: #3498db;
+    text-shadow: 0 0 6px rgba(52, 152, 219, 0.35);
+}
+
+.privacy {
+    margin-top: 14px;
+    font-size: 0.85em;
+    color: #555;
+    line-height: 1.4;
+}
+
 h2 {
     color: #333;
     margin-top: 15px;
