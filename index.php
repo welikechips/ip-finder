@@ -12,6 +12,10 @@ session_start();
 // Include shared utility functions
 require_once 'utils.php';
 
+// Display timestamps in Eastern time (auto EDT/EST). VPNs make IP-based timezone
+// unreliable, so this is a fixed default independent of the visitor's IP.
+date_default_timezone_set('America/New_York');
+
 // Generate CSRF token if not exists
 if (!isset($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -214,7 +218,7 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
 
     <div class="info-footer">
         <p>This tool shows your external IP address, hostname, and detects if you're using a VPN or proxy.</p>
-        <p>Last updated: <?php echo date('Y-m-d H:i:s'); ?></p>
+        <p>Last updated: <?php echo date('Y-m-d H:i:s T'); ?></p>
         <p>Version:
             <?php if ($appCommit !== ''): ?>
                 <a href="https://github.com/welikechips/ip-finder/commit/<?php echo htmlspecialchars($appCommit); ?>" target="_blank" rel="noopener noreferrer"><?php echo htmlspecialchars($appVersion); ?></a>

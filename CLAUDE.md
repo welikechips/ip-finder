@@ -37,7 +37,12 @@ selector.
 - The domain `jiveturkey.rocks` is registered at **Bluehost (domain-only)**; `ip.jiveturkey.rocks` is a CNAME → the
   Render service. Render terminates TLS.
 - Free-tier caveat: the service cold-starts (~30–60s) after 15 min idle.
-- The page footer shows the deployed commit SHA, read from `RENDER_GIT_COMMIT` (runtime) or the `GIT_COMMIT` build arg; local builds show `dev`. `tests/integration.sh` builds with `--build-arg GIT_COMMIT` and asserts it renders.
+- The page footer shows the deployed commit SHA, read from `RENDER_GIT_COMMIT` (runtime) or the `GIT_COMMIT` build arg;
+  local builds show `dev`. `tests/integration.sh` builds with `--build-arg GIT_COMMIT` and asserts it renders.
+- Geolocation (`getIPInfo` in `utils.php`) uses ipinfo.io primary + ipwho.is fallback. ipinfo's token-less tier is
+  throttled from Render's datacenter egress (that's why the location block can vanish), so set an `IPINFO_TOKEN` env var
+  in Render for reliable ipinfo; the ipwho.is fallback covers the zero-config case. Timestamps render in
+  `America/New_York` (EDT/EST), a fixed default since VPNs make IP-based timezone unreliable.
 
 ## Architecture
 

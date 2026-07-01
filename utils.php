@@ -117,45 +117,68 @@ function getExternalIP() {
     return ['success' => false, 'message' => 'Failed to retrieve external IP address'];
 }
 
-// Get additional IP information using ipinfo.io
-function getIPInfo($ip)
-{
-    // Validate IP format first
+// Fetch a URL and return decoded JSON as an associative array, or null on any failure.
+// Restricted to HTTPS to avoid SSRF / protocol surprises.
+function httpGetJson($url, $timeout = 5) {
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+    curl_setopt($ch, CURLOPT_USERAGENT, 'IP Finder/1.0');
+    curl_setopt($ch, CURLOPT_PROTOCOLS, CURLPROTO_HTTPS);
+    curl_setopt($ch, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTPS);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($httpCode == 200 && !empty($response) && isValidJson($response)) {
+        return json_decode($response, true);
+    }
+    return null;
+}
+
+// Normalize an ipwho.is response into the same field shape ipinfo.io returns
+// (city / region / country / org / timezone). Returns null if it lacks geo data.
+function normalizeIpwhois($who) {
+    if (!is_array($who) || empty($who['success']) || empty($who['city'])) {
+        return null;
+    }
+    $org = null;
+    if (isset($who['connection']['asn'], $who['connection']['org'])) {
+        $org = 'AS' . $who['connection']['asn'] . ' ' . $who['connection']['org'];
+    } elseif (isset($who['connection']['isp'])) {
+        $org = $who['connection']['isp'];
+    }
+    return [
+        'ip'       => isset($who['ip']) ? $who['ip'] : null,
+        'city'     => $who['city'],
+        'region'   => isset($who['region']) ? $who['region'] : null,
+        'country'  => isset($who['country_code']) ? $who['country_code'] : (isset($who['country']) ? $who['country'] : null),
+        'org'      => $org,
+        'timezone' => isset($who['timezone']['id']) ? $who['timezone']['id'] : null,
+    ];
+}
+
+// Get geolocation for an IP. Primary provider is ipinfo.io — authenticate it with an
+// IPINFO_TOKEN env var for reliable use from datacenter IPs (our Render host gets its
+// token-less requests limited). Falls back to ipwho.is (token-free) so the location
+// still resolves with zero config.
+function getIPInfo($ip) {
     if (!filter_var($ip, FILTER_VALIDATE_IP)) {
         return null;
     }
 
-    try {
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, "https://ipinfo.io/{$ip}/json");
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true); // Ensure SSL verification is enabled
-        curl_setopt($ch, CURLOPT_USERAGENT, 'IP Finder/1.0');
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($httpCode == 200 && !empty($response)) {
-            // Validate JSON before parsing
-            if (!isValidJson($response)) {
-                return null;
-            }
-
-            $data = json_decode($response, true);
-
-            // Additional validation of expected fields
-            if (!isset($data['ip']) || !filter_var($data['ip'], FILTER_VALIDATE_IP)) {
-                return null;
-            }
-
-            return $data;
-        }
-    } catch (Exception $e) {
-        // Silent fail
+    // Primary: ipinfo.io. A limited/blocked response omits 'city', so require it.
+    $token = getenv('IPINFO_TOKEN');
+    $ipinfoUrl = "https://ipinfo.io/{$ip}/json" . ($token ? '?token=' . urlencode($token) : '');
+    $data = httpGetJson($ipinfoUrl);
+    if (is_array($data) && isset($data['ip']) && filter_var($data['ip'], FILTER_VALIDATE_IP) && !empty($data['city'])) {
+        return $data;
     }
 
-    return null;
+    // Fallback: ipwho.is, normalized to ipinfo's field shape.
+    return normalizeIpwhois(httpGetJson("https://ipwho.is/{$ip}"));
 }
 
 // Enhanced function to get hostname from IP with multiple methods
