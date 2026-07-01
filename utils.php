@@ -40,34 +40,32 @@ function isLocalIP($ip) {
     return false;
 }
 
-// Function to get the client's real IP address considering proxies and VPNs
+// Function to get the client's real IP address.
+//
+// This app is deployed behind Render's edge (Cloudflare -> Render load balancer),
+// which is the ONLY path to the container. That edge sets the real visitor IP in the
+// headers below and OVERWRITES the *-Client-IP headers, so a visitor can't spoof them.
+// We prefer those, then fall back to the first X-Forwarded-For entry, then REMOTE_ADDR
+// (which is all that exists during local/direct access with no proxy in front).
 function getClientIP() {
-    // Define trusted proxies
-    $trustedProxies = [
-        // Add your trusted proxy IPs here
-        '127.0.0.1',
-        // '10.0.0.1',
-        // '10.0.0.2',
-    ];
-
-    // Always trust REMOTE_ADDR as a starting point
-    $clientIP = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '0.0.0.0';
-
-    // Only consider X-Forwarded-For if from trusted reverse proxies
-    if (isset($_SERVER['HTTP_X_FORWARDED_FOR']) && in_array($clientIP, $trustedProxies)) {
-        $ips = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
-        $forwardedIP = trim($ips[0]);
-        if (filter_var($forwardedIP, FILTER_VALIDATE_IP)) {
-            return $forwardedIP;
+    // Cloudflare/Render single-value headers — most trustworthy (edge-controlled).
+    foreach (['HTTP_TRUE_CLIENT_IP', 'HTTP_CF_CONNECTING_IP'] as $header) {
+        if (!empty($_SERVER[$header]) && filter_var($_SERVER[$header], FILTER_VALIDATE_IP)) {
+            return $_SERVER[$header];
         }
     }
 
-    // Validate the IP format
-    if (!validateIP($clientIP)) {
-        return '0.0.0.0';
+    // X-Forwarded-For: on Render the real client is the FIRST (leftmost) entry.
+    if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+        $firstHop = trim(explode(',', $_SERVER['HTTP_X_FORWARDED_FOR'])[0]);
+        if (filter_var($firstHop, FILTER_VALIDATE_IP)) {
+            return $firstHop;
+        }
     }
 
-    return $clientIP;
+    // Direct access (e.g. local dev) — use the TCP peer.
+    $remoteAddr = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '0.0.0.0';
+    return validateIP($remoteAddr) ? $remoteAddr : '0.0.0.0';
 }
 
 // Function to get the external IP address from API services

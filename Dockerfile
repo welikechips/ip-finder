@@ -16,10 +16,6 @@ RUN apt-get update && apt-get install -y \
     libcurl4-openssl-dev \
     && docker-php-ext-install curl
 
-# Enable Apache mod_remoteip so the app sees the real client IP behind the Caddy proxy
-COPY deploy/remoteip.conf /etc/apache2/conf-available/remoteip.conf
-RUN a2enmod remoteip && a2enconf remoteip
-
 # Set working directory
 WORKDIR /var/www/html
 
