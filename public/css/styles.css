@@ -1,11 +1,95 @@
 /*
- * Enhanced IP Finder - Main Stylesheet
- * Provides styling for the IP detection application
+ * Just the tIP - Main Stylesheet
+ * Themeable via CSS custom properties. Default = light. Dark applies either from the OS
+ * (prefers-color-scheme) in Auto mode, or explicitly via [data-theme="dark"] on <html>.
+ * [data-theme="light"] forces light even when the OS is dark.
  */
+
+:root {
+    --bg: #f5f5f5;
+    --surface: #ffffff;
+    --surface-2: #f8f9fa;
+    --text: #333333;
+    --text-value: #2c3e50;
+    --text-muted: #7f8c8d;
+    --text-note: #666666;
+    --text-privacy: #555555;
+    --border: #eeeeee;
+    --border-2: #dddddd;
+    --accent: #3498db;
+    --accent-hover: #2980b9;
+    --accent-glow: rgba(52, 152, 219, 0.35);
+    --accent-green: #2ecc71;
+    --tab-bg: #f1f1f1;
+    --tab-active-bg: #ffffff;
+    --client-bg: #e8f4fd;
+    --client-border: #2196f3;
+    --warning-bg: #fff3cd;
+    --warning-border: #ffc107;
+    --iframe-bg: #f9f9f9;
+    --error: #e74c3c;
+    --spinner-track: rgba(0, 0, 0, 0.1);
+    --shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Dark palette. Applied in Auto mode when the OS is dark (but not if light is forced)... */
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --bg: #121212;
+        --surface: #1e1e1e;
+        --surface-2: #262626;
+        --text: #e6e6e6;
+        --text-value: #d6dbe0;
+        --text-muted: #9aa0a6;
+        --text-note: #9aa0a6;
+        --text-privacy: #9aa0a6;
+        --border: #333333;
+        --border-2: #3a3a3a;
+        --accent: #5dade2;
+        --accent-hover: #4a90c2;
+        --accent-glow: rgba(93, 173, 226, 0.45);
+        --tab-bg: #2a2a2a;
+        --tab-active-bg: #1e1e1e;
+        --client-bg: #12263a;
+        --client-border: #2196f3;
+        --warning-bg: #332d00;
+        --iframe-bg: #f0f0f0; /* stays light in dark mode: the iframe hosts third-party content that renders dark text */
+        --error: #ff6b5e;
+        --spinner-track: rgba(255, 255, 255, 0.12);
+        --shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+    }
+}
+
+/* ...and always when dark is explicitly chosen, regardless of the OS setting. */
+:root[data-theme="dark"] {
+    --bg: #121212;
+    --surface: #1e1e1e;
+    --surface-2: #262626;
+    --text: #e6e6e6;
+    --text-value: #d6dbe0;
+    --text-muted: #9aa0a6;
+    --text-note: #9aa0a6;
+    --text-privacy: #9aa0a6;
+    --border: #333333;
+    --border-2: #3a3a3a;
+    --accent: #5dade2;
+    --accent-hover: #4a90c2;
+    --accent-glow: rgba(93, 173, 226, 0.45);
+    --tab-bg: #2a2a2a;
+    --tab-active-bg: #1e1e1e;
+    --client-bg: #12263a;
+    --client-border: #2196f3;
+    --warning-bg: #332d00;
+    --iframe-bg: #f0f0f0; /* stays light in dark mode: the iframe hosts third-party content that renders dark text */
+    --error: #ff6b5e;
+    --spinner-track: rgba(255, 255, 255, 0.12);
+    --shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+}
 
 body {
     font-family: Arial, sans-serif;
-    background-color: #f5f5f5;
+    background-color: var(--bg);
+    color: var(--text);
     margin: 0;
     padding: 20px;
     display: flex;
@@ -15,35 +99,55 @@ body {
 }
 
 .container {
-    background-color: white;
+    position: relative;
+    background-color: var(--surface);
     border-radius: 8px;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    box-shadow: var(--shadow);
     padding: 30px;
     width: 90%;
     max-width: 600px;
 }
 
+.theme-toggle {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border-2);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.theme-toggle:hover {
+    color: var(--text);
+    border-color: var(--accent);
+}
+
 h1 {
-    color: #333;
+    color: var(--text);
     margin-bottom: 20px;
     text-align: center;
 }
 
 /* Make the "IP" pop inside the "Just the tIP" wordmark */
 .ip-accent {
-    color: #3498db;
-    text-shadow: 0 0 6px rgba(52, 152, 219, 0.35);
+    color: var(--accent);
+    text-shadow: 0 0 6px var(--accent-glow);
 }
 
 .privacy {
     margin-top: 14px;
     font-size: 0.85em;
-    color: #555;
+    color: var(--text-privacy);
     line-height: 1.4;
 }
 
 h2 {
-    color: #333;
+    color: var(--text);
     margin-top: 15px;
     margin-bottom: 15px;
 }
@@ -51,9 +155,9 @@ h2 {
 .ip-info {
     margin: 20px 0;
     padding: 15px;
-    background-color: #f8f9fa;
+    background-color: var(--surface-2);
     border-radius: 6px;
-    border-left: 4px solid #3498db;
+    border-left: 4px solid var(--accent);
 }
 
 .ip-row {
@@ -61,7 +165,7 @@ h2 {
     justify-content: space-between;
     margin-bottom: 10px;
     padding-bottom: 10px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--border);
 }
 
 .ip-row-noborder {
@@ -75,18 +179,52 @@ h2 {
 
 .ip-label {
     font-weight: bold;
-    color: #333;
+    color: var(--text);
 }
 
 .ip-value {
     font-family: monospace;
     font-size: 16px;
-    color: #2c3e50;
+    color: var(--text-value);
+}
+
+.ip-value-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.copy-btn {
+    background: transparent;
+    border: 1px solid var(--border-2);
+    color: var(--text-muted);
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 13px;
+    line-height: 1;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.copy-btn:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+.copy-btn.copied {
+    color: var(--accent-green);
+    border-color: var(--accent-green);
+}
+
+/* Off-screen helper for the clipboard fallback (no inline styles — CSP-safe) */
+.copy-helper {
+    position: absolute;
+    left: -9999px;
 }
 
 .hostname {
     font-size: 14px;
-    color: #7f8c8d;
+    color: var(--text-muted);
     margin-top: 5px;
     font-style: italic;
 }
@@ -94,8 +232,8 @@ h2 {
 .proxy-warning {
     margin: 15px 0;
     padding: 10px;
-    background-color: #fff3cd;
-    border-left: 4px solid #ffc107;
+    background-color: var(--warning-bg);
+    border-left: 4px solid var(--warning-border);
     border-radius: 4px;
     font-size: 14px;
 }
@@ -103,14 +241,14 @@ h2 {
 .location-info {
     margin: 20px 0;
     padding: 15px;
-    background-color: #f8f9fa;
+    background-color: var(--surface-2);
     border-radius: 6px;
-    border-left: 4px solid #2ecc71;
+    border-left: 4px solid var(--accent-green);
 }
 
 .refresh-btn {
-    background-color: #3498db;
-    color: white;
+    background-color: var(--accent);
+    color: #ffffff;
     border: none;
     padding: 10px 20px;
     border-radius: 4px;
@@ -123,25 +261,25 @@ h2 {
 }
 
 .refresh-btn:hover {
-    background-color: #2980b9;
+    background-color: var(--accent-hover);
 }
 
 .info-footer {
     margin-top: 20px;
     font-size: 12px;
-    color: #7f8c8d;
+    color: var(--text-muted);
     text-align: center;
 }
 
 .note-text {
     margin-top: 15px;
     font-size: 13px;
-    color: #666;
+    color: var(--text-note);
     font-style: italic;
 }
 
 .error {
-    color: #e74c3c;
+    color: var(--error);
     font-style: italic;
 }
 
@@ -151,18 +289,18 @@ h2 {
 }
 
 .spinner {
-    border: 4px solid rgba(0, 0, 0, 0.1);
+    border: 4px solid var(--spinner-track);
     width: 36px;
     height: 36px;
     border-radius: 50%;
-    border-left-color: #3498db;
+    border-left-color: var(--accent);
     animation: spin 1s linear infinite;
     display: inline-block;
 }
 
 .client-side {
-    background-color: #e8f4fd;
-    border-left: 4px solid #2196F3;
+    background-color: var(--client-bg);
+    border-left: 4px solid var(--client-border);
     padding: 15px;
     margin: 20px 0;
     border-radius: 6px;
@@ -170,23 +308,24 @@ h2 {
 
 .tab-container {
     display: flex;
-    border-bottom: 1px solid #ddd;
+    border-bottom: 1px solid var(--border-2);
     margin-bottom: 20px;
 }
 
 .tab {
     padding: 10px 20px;
     cursor: pointer;
-    background-color: #f1f1f1;
-    border: 1px solid #ddd;
+    background-color: var(--tab-bg);
+    border: 1px solid var(--border-2);
     border-bottom: none;
     margin-right: 5px;
     border-radius: 5px 5px 0 0;
+    color: var(--text);
 }
 
 .tab.active {
-    background-color: white;
-    border-bottom: 1px solid white;
+    background-color: var(--tab-active-bg);
+    border-bottom: 1px solid var(--tab-active-bg);
     margin-bottom: -1px;
 }
 
@@ -201,9 +340,9 @@ h2 {
 .external-iframe {
     width: 100%;
     height: 150px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border-2);
     border-radius: 4px;
-    background-color: #f9f9f9;
+    background-color: var(--iframe-bg);
 }
 
 .alternative-method {
@@ -231,89 +370,4 @@ h2 {
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
-}
-
-/* Dark mode — system-driven via prefers-color-scheme. CSP-safe: lives entirely in the
-   external stylesheet (no inline styles). Only overrides colors; layout is unchanged. */
-@media (prefers-color-scheme: dark) {
-    body {
-        background-color: #121212;
-        color: #e6e6e6;
-    }
-
-    .container {
-        background-color: #1e1e1e;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
-    }
-
-    h1,
-    h2,
-    .ip-label {
-        color: #e8e8e8;
-    }
-
-    /* Keep the wordmark "IP" glowing, a touch brighter for dark backgrounds. */
-    .ip-accent {
-        color: #5dade2;
-        text-shadow: 0 0 8px rgba(93, 173, 226, 0.45);
-    }
-
-    .ip-value {
-        color: #d6dbe0;
-    }
-
-    .ip-info,
-    .location-info {
-        background-color: #262626;
-    }
-
-    .ip-row {
-        border-bottom-color: #333;
-    }
-
-    .privacy,
-    .note-text,
-    .info-footer,
-    .hostname {
-        color: #9aa0a6;
-    }
-
-    .client-side {
-        background-color: #12263a;
-        border-left-color: #2196f3;
-    }
-
-    .proxy-warning {
-        background-color: #332d00;
-        color: #ffe08a;
-    }
-
-    .tab-container {
-        border-bottom-color: #3a3a3a;
-    }
-
-    .tab {
-        background-color: #2a2a2a;
-        border-color: #3a3a3a;
-        color: #cfcfcf;
-    }
-
-    .tab.active {
-        background-color: #1e1e1e;
-        border-bottom-color: #1e1e1e;
-    }
-
-    .external-iframe {
-        background-color: #262626;
-        border-color: #3a3a3a;
-    }
-
-    .spinner {
-        border-color: rgba(255, 255, 255, 0.12);
-        border-left-color: #5dade2;
-    }
-
-    .error {
-        color: #ff6b5e;
-    }
 }
