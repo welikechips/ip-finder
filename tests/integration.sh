@@ -69,6 +69,10 @@ curl -s -A "$UA_HTML" "$BASE/" | grep -qi 'Privacy' \
 curl -s -A "$UA_HTML" "$BASE/" | grep -q 'id="theme-toggle"' && ok "theme toggle present" || bad "theme toggle missing"
 curl -s -A "$UA_HTML" "$BASE/" | grep -q 'class="copy-btn"' && ok "copy-IP button present" || bad "copy-IP button missing"
 
+# 1f. WebRTC leak-check section present + CSP allows the STUN server
+curl -s -A "$UA_HTML" "$BASE/" | grep -q 'id="webrtc-result"' && ok "WebRTC leak-check section present" || bad "WebRTC section missing"
+curl -sD - -o /dev/null "$BASE/" | grep -qi 'stun:stun.l.google.com' && ok "CSP allows STUN for WebRTC" || bad "CSP missing STUN source"
+
 # 2. True-Client-IP is reported as the visitor IP (on the HTML page)
 curl -s -A "$UA_HTML" -H "True-Client-IP: 1.1.1.1" "$BASE/" | grep -q "1.1.1.1" \
   && ok "True-Client-IP surfaced as visitor IP" || bad "True-Client-IP not surfaced"

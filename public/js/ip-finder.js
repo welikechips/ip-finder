@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', function() {
     clientTab.addEventListener('click', function() {
         switchTab('client-side');
         detectBrowserIP();
+        detectWebRTCLeak();
     });
 
     // --- Theme switch: Auto -> Light -> Dark, persisted client-side in localStorage ---
@@ -96,6 +97,114 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
+
+    // --- WebRTC leak check: surface IPs that WebRTC exposes (they can bypass a VPN).
+    //     Runs entirely in the browser; nothing is sent to the server. ---
+    let webrtcChecked = false;
+    function detectWebRTCLeak() {
+        const el = document.getElementById('webrtc-result');
+        if (!el || webrtcChecked) {
+            return;
+        }
+        webrtcChecked = true;
+
+        if (!window.RTCPeerConnection) {
+            setWebrtc(el, 'ok', 'WebRTC is not available in this browser — nothing to leak.');
+            return;
+        }
+
+        const knownEl = document.getElementById('server-ip-value');
+        const knownIp = knownEl ? (knownEl.textContent || '').trim() : '';
+        const found = {};
+        let pc;
+        try {
+            pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+        } catch (e) {
+            setWebrtc(el, 'ok', 'WebRTC is blocked — nothing exposed. Good for privacy.');
+            return;
+        }
+
+        let done = false;
+        try {
+            pc.createDataChannel('leak');
+        } catch (e) {}
+
+        pc.onicecandidate = function (e) {
+            if (!e || !e.candidate) { finish(); return; }
+            const ips = extractIps(e.candidate.candidate || '');
+            for (let i = 0; i < ips.length; i++) { found[ips[i]] = true; }
+            render(false);
+        };
+        pc.createOffer().then(function (offer) { return pc.setLocalDescription(offer); }).catch(function () {});
+        setTimeout(finish, 3000);
+
+        function finish() {
+            if (done) { return; }
+            done = true;
+            try { pc.close(); } catch (e) {}
+            render(true);
+        }
+
+        function render(complete) {
+            const ips = Object.keys(found);
+            if (!complete && ips.length === 0) { el.textContent = 'Checking…'; return; }
+            if (ips.length === 0) {
+                setWebrtc(el, 'ok', '✓ No IP addresses exposed via WebRTC.');
+                return;
+            }
+            const privates = ips.filter(isPrivateIp);
+            const publics = ips.filter(function (ip) { return !isPrivateIp(ip); });
+            const leaked = publics.filter(function (ip) { return knownIp && ip !== knownIp; });
+
+            if (privates.length === 0 && leaked.length === 0) {
+                const shown = publics.length ? publics.join(', ') : ips.join(', ');
+                setWebrtc(el, 'ok', '✓ WebRTC exposes only your known IP (' + shown + ') — no leak detected.');
+                return;
+            }
+            let msg = '';
+            if (privates.length) { msg += '⚠️ Local network IP exposed: ' + privates.join(', ') + '. '; }
+            if (leaked.length) { msg += '⚠️ A different public IP is visible via WebRTC: ' + leaked.join(', ') + ' — this can bypass a VPN. '; }
+            setWebrtc(el, 'warn', msg.trim());
+        }
+    }
+
+    function setWebrtc(el, level, text) {
+        el.textContent = text;
+        el.classList.remove('webrtc-ok', 'webrtc-warn');
+        el.classList.add(level === 'warn' ? 'webrtc-warn' : 'webrtc-ok');
+    }
+
+    // Extract plausible IPv4/IPv6 addresses from an ICE candidate string (skips mDNS .local).
+    function extractIps(candidate) {
+        if (candidate.indexOf('.local') !== -1) { return []; }
+        const out = [];
+        const v4 = candidate.match(/(?:\d{1,3}\.){3}\d{1,3}/g) || [];
+        for (let i = 0; i < v4.length; i++) {
+            if (isValidV4(v4[i]) && v4[i] !== '0.0.0.0') { out.push(v4[i]); }
+        }
+        const v6 = candidate.match(/[a-f0-9]{0,4}(?::[a-f0-9]{0,4}){3,7}/gi) || [];
+        for (let j = 0; j < v6.length; j++) {
+            if (v6[j].indexOf(':') !== -1 && v6[j] !== '::') { out.push(v6[j].toLowerCase()); }
+        }
+        return out;
+    }
+
+    function isValidV4(ip) {
+        const parts = ip.split('.');
+        if (parts.length !== 4) { return false; }
+        for (let i = 0; i < 4; i++) {
+            const n = parseInt(parts[i], 10);
+            if (isNaN(n) || n < 0 || n > 255) { return false; }
+        }
+        return true;
+    }
+
+    function isPrivateIp(ip) {
+        if (ip.indexOf(':') !== -1) {
+            return /^(fe80:|fc|fd|::1)/i.test(ip);
+        }
+        return /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip);
+    }
 
     // Function to switch tabs
     function switchTab(tabId) {
