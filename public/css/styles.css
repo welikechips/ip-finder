@@ -232,3 +232,88 @@ h2 {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
+
+/* Dark mode — system-driven via prefers-color-scheme. CSP-safe: lives entirely in the
+   external stylesheet (no inline styles). Only overrides colors; layout is unchanged. */
+@media (prefers-color-scheme: dark) {
+    body {
+        background-color: #121212;
+        color: #e6e6e6;
+    }
+
+    .container {
+        background-color: #1e1e1e;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+    }
+
+    h1,
+    h2,
+    .ip-label {
+        color: #e8e8e8;
+    }
+
+    /* Keep the wordmark "IP" glowing, a touch brighter for dark backgrounds. */
+    .ip-accent {
+        color: #5dade2;
+        text-shadow: 0 0 8px rgba(93, 173, 226, 0.45);
+    }
+
+    .ip-value {
+        color: #d6dbe0;
+    }
+
+    .ip-info,
+    .location-info {
+        background-color: #262626;
+    }
+
+    .ip-row {
+        border-bottom-color: #333;
+    }
+
+    .privacy,
+    .note-text,
+    .info-footer,
+    .hostname {
+        color: #9aa0a6;
+    }
+
+    .client-side {
+        background-color: #12263a;
+        border-left-color: #2196f3;
+    }
+
+    .proxy-warning {
+        background-color: #332d00;
+        color: #ffe08a;
+    }
+
+    .tab-container {
+        border-bottom-color: #3a3a3a;
+    }
+
+    .tab {
+        background-color: #2a2a2a;
+        border-color: #3a3a3a;
+        color: #cfcfcf;
+    }
+
+    .tab.active {
+        background-color: #1e1e1e;
+        border-bottom-color: #1e1e1e;
+    }
+
+    .external-iframe {
+        background-color: #262626;
+        border-color: #3a3a3a;
+    }
+
+    .spinner {
+        border-color: rgba(255, 255, 255, 0.12);
+        border-left-color: #5dade2;
+    }
+
+    .error {
+        color: #ff6b5e;
+    }
+}
