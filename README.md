@@ -41,6 +41,17 @@ The page offers two detection modes:
 Security: the app sets a strict Content-Security-Policy and related headers, issues a CSRF token for the refresh form,
 and rate-limits requests per session.
 
+### Terminal / API
+
+The page content-negotiates, so it doubles as a CLI/JSON endpoint (the ifconfig.me pattern):
+
+```bash
+curl ip.jiveturkey.rocks               # -> bare IP as text/plain (for curl/wget/etc.)
+curl "ip.jiveturkey.rocks?format=json" # -> JSON: ip, hostname, city, region, country, org, timezone
+```
+
+Browsers (any `text/html` client) get the full HTML page. `Accept: application/json` also returns JSON.
+
 ## Tor Connection Checker
 
 A command-line tool (run inside the container) that reports on your Tor / DNS setup.
