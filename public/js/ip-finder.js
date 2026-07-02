@@ -22,6 +22,81 @@ document.addEventListener('DOMContentLoaded', function() {
         detectBrowserIP();
     });
 
+    // --- Theme switch: Auto -> Light -> Dark, persisted client-side in localStorage ---
+    (function () {
+        const btn = document.getElementById('theme-toggle');
+        if (!btn) {
+            return;
+        }
+        const LABELS = { auto: '◐ Auto', light: '☀ Light', dark: '☾ Dark' };
+        const readMode = function () {
+            let t = null;
+            try {
+                t = localStorage.getItem('theme');
+            } catch (e) {}
+            return (t === 'light' || t === 'dark') ? t : 'auto';
+        };
+        const applyMode = function (mode) {
+            if (mode === 'auto') {
+                document.documentElement.removeAttribute('data-theme');
+                try { localStorage.removeItem('theme'); } catch (e) {}
+            } else {
+                document.documentElement.setAttribute('data-theme', mode);
+                try { localStorage.setItem('theme', mode); } catch (e) {}
+            }
+            btn.textContent = LABELS[mode];
+            btn.setAttribute('title', 'Theme: ' + mode.charAt(0).toUpperCase() + mode.slice(1) + ' (click to change)');
+        };
+        applyMode(readMode());
+        btn.addEventListener('click', function () {
+            const order = ['auto', 'light', 'dark'];
+            applyMode(order[(order.indexOf(readMode()) + 1) % order.length]);
+        });
+    })();
+
+    // --- Copy-to-clipboard for IP values ---
+    const fallbackCopy = function (text, done) {
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.className = 'copy-helper';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            if (done) {
+                done();
+            }
+        } catch (e) {}
+    };
+    Array.prototype.forEach.call(document.querySelectorAll('.copy-btn'), function (btn) {
+        btn.addEventListener('click', function () {
+            const target = document.getElementById(btn.getAttribute('data-copy'));
+            if (!target) {
+                return;
+            }
+            const text = (target.textContent || '').trim();
+            if (!text) {
+                return;
+            }
+            const flash = function () {
+                const prev = btn.textContent;
+                btn.textContent = '✓';
+                btn.classList.add('copied');
+                setTimeout(function () {
+                    btn.textContent = prev;
+                    btn.classList.remove('copied');
+                }, 1200);
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(flash).catch(function () { fallbackCopy(text, flash); });
+            } else {
+                fallbackCopy(text, flash);
+            }
+        });
+    });
+
     // Function to switch tabs
     function switchTab(tabId) {
         // Hide all tab contents

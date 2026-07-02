@@ -61,6 +61,10 @@ curl -s "$BASE/" | grep -qE 'Last updated:.*(EDT|EST)' \
 curl -s "$BASE/" | grep -qi 'Privacy' \
   && ok "privacy disclaimer shown" || bad "privacy disclaimer missing"
 
+# 1e. Theme toggle + copy-IP button present
+curl -s "$BASE/" | grep -q 'id="theme-toggle"' && ok "theme toggle present" || bad "theme toggle missing"
+curl -s "$BASE/" | grep -q 'class="copy-btn"' && ok "copy-IP button present" || bad "copy-IP button missing"
+
 # 2. True-Client-IP is reported as the visitor IP
 curl -s -H "True-Client-IP: 1.1.1.1" "$BASE/" | grep -q "1.1.1.1" \
   && ok "True-Client-IP surfaced as visitor IP" || bad "True-Client-IP not surfaced"

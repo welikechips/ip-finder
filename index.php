@@ -87,9 +87,21 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
     <title>Just the tIP</title>
     <link rel="stylesheet" href="public/css/styles.css">
     <link rel="icon" href="data:,">
+    <script nonce="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+        // Apply a saved theme override before first paint to avoid a flash. Client-only.
+        (function () {
+            try {
+                const t = localStorage.getItem('theme');
+                if (t === 'light' || t === 'dark') {
+                    document.documentElement.setAttribute('data-theme', t);
+                }
+            } catch (e) {}
+        })();
+    </script>
 </head>
 <body>
 <div class="container">
+    <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Toggle color theme">◐ Auto</button>
     <h1>Just the t<span class="ip-accent">IP</span></h1>
 
     <div class="tab-container">
@@ -105,8 +117,9 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
             <?php if ($externalIPData['success']): ?>
                 <div class="ip-row">
                     <span class="ip-label">IP Address:</span>
-                    <span class="ip-value">
-                        <?php echo htmlspecialchars($externalIP); ?>
+                    <span class="ip-value-group">
+                        <span class="ip-value" id="server-ip-value"><?php echo htmlspecialchars($externalIP); ?></span>
+                        <button type="button" class="copy-btn" data-copy="server-ip-value" aria-label="Copy IP address" title="Copy IP">📋</button>
                     </span>
                 </div>
 
@@ -193,7 +206,10 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
             <div id="browser-ip-result" class="hidden">
                 <div class="ip-row">
                     <span class="ip-label">IP Address:</span>
-                    <span class="ip-value" id="browser-ip">Detecting...</span>
+                    <span class="ip-value-group">
+                        <span class="ip-value" id="browser-ip">Detecting...</span>
+                        <button type="button" class="copy-btn" data-copy="browser-ip" aria-label="Copy IP address" title="Copy IP">📋</button>
+                    </span>
                 </div>
                 <div class="ip-row">
                     <span class="ip-label">Hostname:</span>
