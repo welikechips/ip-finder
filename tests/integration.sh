@@ -107,6 +107,12 @@ echo "$apijson" | grep -q '"ip": "203.0.113.7"' && ok "?format=json returns the 
 curl -sD - -o /dev/null -H "True-Client-IP: 203.0.113.7" "$BASE/?format=json" | grep -qi 'content-type: application/json' \
   && ok "?format=json content-type is application/json" || bad "json content-type missing"
 
+# 6c. Anonymization flags: a hosting IP (8.8.8.8 = Google) gets a datacenter flag; JSON carries flags[]
+curl -s -A "$UA_HTML" -H "True-Client-IP: 8.8.8.8" "$BASE/" | grep -qi 'datacenter' \
+  && ok "datacenter/VPN flag shown for a hosting IP" || bad "datacenter flag missing for 8.8.8.8"
+curl -s -H "True-Client-IP: 8.8.8.8" "$BASE/?format=json" | grep -q '"flags"' \
+  && ok "JSON includes a flags array" || bad "JSON flags array missing"
+
 # 7. Security headers present on /
 headers=$(curl -sD - -o /dev/null "$BASE/")
 for h in "Content-Security-Policy" "X-Content-Type-Options: nosniff" "X-Frame-Options: DENY" "Strict-Transport-Security: max-age="; do

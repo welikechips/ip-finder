@@ -251,6 +251,32 @@ h2 {
     background-color: var(--warning-bg);
 }
 
+/* Anonymization flags (Tor exit / VPN / datacenter) — pill badges */
+.ip-flags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 8px 0 4px;
+}
+
+.ip-flag {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: bold;
+    border: 1px solid var(--warning-border);
+    background-color: var(--warning-bg);
+    color: var(--text);
+}
+
+.ip-flag-tor {
+    border-color: #9b59b6;
+}
+
+.ip-flag-vpn {
+    border-color: var(--accent);
+}
 .hostname {
     font-size: 14px;
     color: var(--text-muted);

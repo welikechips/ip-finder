@@ -109,5 +109,22 @@ check(normalizeIpwhois(['success' => false]) === null, 'unsuccessful response ->
 check(normalizeIpwhois(['success' => true]) === null,  'no city -> null');
 check(normalizeIpwhois('nope') === null,               'non-array -> null');
 
+echo "detectHostingType (VPN/datacenter heuristic)\n";
+is_eq(detectHostingType(['org' => 'AS212238 Datacamp Limited']), 'datacenter', 'known hosting provider -> datacenter');
+is_eq(detectHostingType(['org' => 'AS15169 Google LLC']), 'datacenter',        'Google LLC -> datacenter');
+is_eq(detectHostingType(['org' => 'AS64500 Example VPN Services']), 'vpn',      'VPN wording -> vpn');
+is_eq(detectHostingType(['org' => 'AS701 Verizon Business']), null,             'residential ISP -> null (no false positive)');
+is_eq(detectHostingType(['org' => 'AS7922 Comcast Cable Communications']), null, 'Comcast -> null');
+is_eq(detectHostingType([]), null,                                             'no org -> null');
+is_eq(detectHostingType('nope'), null,                                         'non-array -> null');
+
+echo "ipInList (Tor exit-list membership)\n";
+$torSample = "203.0.113.4\n203.0.113.5\n198.51.100.10\n";
+check(ipInList('203.0.113.5', $torSample) === true,        'exact IP present -> true');
+check(ipInList('203.0.113.9', $torSample) === false,       'IP absent -> false');
+check(ipInList('203.0.113.50', "203.0.113.5\n") === false, 'no partial-line match (.5 vs .50)');
+check(ipInList('not-an-ip', $torSample) === false,         'invalid IP -> false');
+check(ipInList('203.0.113.5', '') === false,               'empty list -> false');
+
 echo "\n" . $GLOBALS['__tests'] . " checks, " . $GLOBALS['__fails'] . " failed\n";
 exit($GLOBALS['__fails'] > 0 ? 1 : 0);

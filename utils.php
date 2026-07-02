@@ -181,6 +181,99 @@ function getIPInfo($ip) {
     return normalizeIpwhois(httpGetJson("https://ipwho.is/{$ip}"));
 }
 
+// Raw HTTP GET (text body), HTTPS-only. Returns the body string or null on failure.
+function httpGetRaw($url, $timeout = 4) {
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+    curl_setopt($ch, CURLOPT_USERAGENT, 'IP Finder/1.0');
+    curl_setopt($ch, CURLOPT_PROTOCOLS, CURLPROTO_HTTPS);
+    curl_setopt($ch, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTPS);
+    $body = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return ($code == 200 && is_string($body) && $body !== '') ? $body : null;
+}
+
+// Heuristic: does this IP's org look like a hosting / datacenter / VPN provider?
+// Returns 'vpn', 'datacenter', or null. Best-effort — label the result honestly, it is
+// not proof. Residential ISPs (Verizon, Comcast, etc.) are intentionally NOT matched.
+function detectHostingType($ipInfo) {
+    if (!is_array($ipInfo) || empty($ipInfo['org'])) {
+        return null;
+    }
+    $org = strtolower($ipInfo['org']);
+
+    // Explicit VPN wording wins.
+    if (preg_match('/\bvpn\b/', $org)) {
+        return 'vpn';
+    }
+    // Known hosting / cloud providers (substring match on org).
+    $providers = [
+        'datacamp', 'digitalocean', 'digital ocean', 'ovh', 'hetzner', 'linode', 'vultr',
+        'm247', 'choopa', 'leaseweb', 'contabo', 'scaleway', 'psychz', 'quadranet',
+        'amazon', 'aws', 'google llc', 'google cloud', 'microsoft', 'azure', 'oracle cloud',
+        'cloudflare', 'akamai', 'fastly', 'hostwinds', 'colocation', 'hostinger',
+    ];
+    foreach ($providers as $p) {
+        if (strpos($org, $p) !== false) {
+            return 'datacenter';
+        }
+    }
+    // Generic hosting keywords.
+    if (preg_match('/\b(hosting|datacenter|data ?center|colo|dedicated servers?|cloud)\b/', $org)) {
+        return 'datacenter';
+    }
+    return null;
+}
+
+// Pure membership check: is $ip present as a whole line in $listText? (unit-testable)
+function ipInList($ip, $listText) {
+    if (!is_string($listText) || $listText === '' || !filter_var($ip, FILTER_VALIDATE_IP)) {
+        return false;
+    }
+    return preg_match('/^' . preg_quote($ip, '/') . '\s*$/m', $listText) === 1;
+}
+
+// Is the IP a known Tor exit node? Uses the Tor Project bulk exit list, cached locally for
+// an hour. Privacy note: this fetches the PUBLIC list and checks membership locally — the
+// visitor's IP is never sent anywhere.
+function isTorExit($ip) {
+    if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+        return false;
+    }
+    $cacheFile = sys_get_temp_dir() . '/tor_exit_list.txt';
+    if (!is_file($cacheFile) || (time() - @filemtime($cacheFile)) > 3600) {
+        $list = httpGetRaw('https://check.torproject.org/torbulkexitlist');
+        if ($list !== null) {
+            @file_put_contents($cacheFile, $list);
+        }
+    }
+    if (is_file($cacheFile)) {
+        $list = @file_get_contents($cacheFile);
+        return $list !== false && ipInList($ip, $list);
+    }
+    return false;
+}
+
+// Assemble anonymization flags for an IP (best-effort heuristics), e.g. Tor exit / VPN /
+// datacenter. Returns a list of ['type' => ..., 'label' => ...].
+function getIPFlags($ip, $ipInfo) {
+    $flags = [];
+    if (isTorExit($ip)) {
+        $flags[] = ['type' => 'tor', 'label' => 'Tor exit node'];
+    }
+    $hosting = detectHostingType($ipInfo);
+    if ($hosting === 'vpn') {
+        $flags[] = ['type' => 'vpn', 'label' => 'Looks like a VPN'];
+    } elseif ($hosting === 'datacenter') {
+        $flags[] = ['type' => 'datacenter', 'label' => 'Looks like a datacenter / hosting IP'];
+    }
+    return $flags;
+}
+
 // Enhanced function to get hostname from IP with multiple methods
 function resolveHostname($ip) {
     // Validate IP format first
