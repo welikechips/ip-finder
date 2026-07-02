@@ -47,11 +47,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Clear the output buffer to prevent var_dump from showing
+// Content negotiation: CLI/API clients get plain text or JSON; browsers get the HTML page.
+$reqFormat = isset($_GET['format']) ? strtolower(trim($_GET['format'])) : '';
+$reqAccept = isset($_SERVER['HTTP_ACCEPT']) ? $_SERVER['HTTP_ACCEPT'] : '';
+$reqAgent  = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '';
+$wantsJson = ($reqFormat === 'json')
+    || (stripos($reqAccept, 'application/json') !== false && stripos($reqAccept, 'text/html') === false);
+$wantsText = in_array($reqFormat, ['text', 'txt', 'plain'], true)
+    || (bool) preg_match('~\b(curl|wget|httpie|python-requests|libwww-perl|go-http-client)\b~i', $reqAgent);
+
+// Clear the output buffer to keep stray output from the lookup functions out of the response
 ob_start();
 
-// Determine the visitor's IP. Behind our Caddy reverse proxy, Apache's mod_remoteip
-// rewrites REMOTE_ADDR from X-Forwarded-For, so getClientIP() is the real client IP.
+// Determine the visitor's IP. Behind Render's Cloudflare edge, getClientIP() reads the real
+// client IP from True-Client-IP / CF-Connecting-IP / the first X-Forwarded-For hop.
 $clientIP = getClientIP();
 $clientIsPublic = ($clientIP && !isLocalIP($clientIP) && $clientIP !== '0.0.0.0');
 
@@ -64,12 +73,36 @@ if ($clientIsPublic) {
 }
 $externalIP = $externalIPData['success'] ? $externalIPData['ip'] : 'Unknown';
 
-// Hostname + geolocation for the IP we're displaying.
+// Fast path: bare plain-text IP for CLI clients (curl/wget/...). Skips the hostname + geo
+// lookups they don't need, so `curl ip.jiveturkey.rocks` stays quick.
+if ($wantsText && !$wantsJson) {
+    ob_end_clean();
+    header('Content-Type: text/plain; charset=utf-8');
+    echo $externalIP . "\n";
+    exit;
+}
+
+// Hostname + geolocation for the IP we're displaying (needed for JSON and the HTML page).
 $externalHostname = $externalIPData['success'] ? resolveHostname($externalIP) : null;
 $ipInfo = $externalIPData['success'] ? getIPInfo($externalIP) : null;
 
 // Clear any output buffer
 ob_end_clean();
+
+// JSON for API clients (?format=json or Accept: application/json).
+if ($wantsJson) {
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode([
+        'ip'       => $externalIP,
+        'hostname' => $externalHostname,
+        'city'     => isset($ipInfo['city']) ? $ipInfo['city'] : null,
+        'region'   => isset($ipInfo['region']) ? $ipInfo['region'] : null,
+        'country'  => isset($ipInfo['country']) ? $ipInfo['country'] : null,
+        'org'      => isset($ipInfo['org']) ? $ipInfo['org'] : null,
+        'timezone' => isset($ipInfo['timezone']) ? $ipInfo['timezone'] : null,
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+    exit;
+}
 
 // We now report the client IP directly, so the old server-vs-client proxy
 // comparison no longer applies — no false "VPN detected" banner.

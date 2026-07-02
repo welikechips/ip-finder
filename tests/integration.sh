@@ -45,32 +45,36 @@ done
 
 echo "==> HTTP endpoint checks"
 
+# The page content-negotiates: curl's default UA gets the plain-text API, so the HTML-page
+# checks below must present as a browser to receive the HTML.
+UA_HTML="Mozilla/5.0 (test-suite)"
+
 # 1. Home page serves
 code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/")
 [ "$code" = "200" ] && ok "GET / -> 200" || bad "GET / -> $code (want 200)"
 
 # 1b. Version (deployed git SHA) shows in the footer
-curl -s "$BASE/" | grep -q "$GIT_SHORT" \
+curl -s -A "$UA_HTML" "$BASE/" | grep -q "$GIT_SHORT" \
   && ok "version rendered (git $GIT_SHORT)" || bad "version SHA $GIT_SHORT not rendered"
 
 # 1c. Timestamp shows Eastern timezone (EDT/EST)
-curl -s "$BASE/" | grep -qE 'Last updated:.*(EDT|EST)' \
+curl -s -A "$UA_HTML" "$BASE/" | grep -qE 'Last updated:.*(EDT|EST)' \
   && ok "timestamp shows Eastern tz (EDT/EST)" || bad "timestamp missing Eastern tz"
 
 # 1d. Privacy disclaimer is present
-curl -s "$BASE/" | grep -qi 'Privacy' \
+curl -s -A "$UA_HTML" "$BASE/" | grep -qi 'Privacy' \
   && ok "privacy disclaimer shown" || bad "privacy disclaimer missing"
 
 # 1e. Theme toggle + copy-IP button present
-curl -s "$BASE/" | grep -q 'id="theme-toggle"' && ok "theme toggle present" || bad "theme toggle missing"
-curl -s "$BASE/" | grep -q 'class="copy-btn"' && ok "copy-IP button present" || bad "copy-IP button missing"
+curl -s -A "$UA_HTML" "$BASE/" | grep -q 'id="theme-toggle"' && ok "theme toggle present" || bad "theme toggle missing"
+curl -s -A "$UA_HTML" "$BASE/" | grep -q 'class="copy-btn"' && ok "copy-IP button present" || bad "copy-IP button missing"
 
-# 2. True-Client-IP is reported as the visitor IP
-curl -s -H "True-Client-IP: 1.1.1.1" "$BASE/" | grep -q "1.1.1.1" \
+# 2. True-Client-IP is reported as the visitor IP (on the HTML page)
+curl -s -A "$UA_HTML" -H "True-Client-IP: 1.1.1.1" "$BASE/" | grep -q "1.1.1.1" \
   && ok "True-Client-IP surfaced as visitor IP" || bad "True-Client-IP not surfaced"
 
-# 3. XFF leftmost is surfaced; proxy hops are NOT leaked (today's bug)
-body=$(curl -s -H "X-Forwarded-For: 203.0.113.7, 172.71.195.123, 10.226.90.65" "$BASE/")
+# 3. XFF leftmost is surfaced; proxy hops are NOT leaked (the Cloudflare-edge bug)
+body=$(curl -s -A "$UA_HTML" -H "X-Forwarded-For: 203.0.113.7, 172.71.195.123, 10.226.90.65" "$BASE/")
 if echo "$body" | grep -q "203.0.113.7" && ! echo "$body" | grep -qE "172\.71\.195\.123|10\.226\.90\.65"; then
   ok "XFF leftmost surfaced, proxy hops hidden"
 else
@@ -90,6 +94,14 @@ code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/hostname-lookup.php?ip=not-
 # 6. hostname-lookup: missing param -> 400
 code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/hostname-lookup.php")
 [ "$code" = "400" ] && ok "hostname-lookup missing param -> 400" || bad "hostname-lookup missing param -> $code (want 400)"
+
+# 6b. curl/JSON API — plain-text IP for CLI clients + JSON via ?format=json
+apitxt=$(curl -s -A "curl/8.0" -H "True-Client-IP: 203.0.113.7" "$BASE/")
+echo "$apitxt" | grep -qx "203.0.113.7" && ok "curl UA -> bare text IP" || bad "curl UA text IP wrong: [$apitxt]"
+apijson=$(curl -s -H "True-Client-IP: 203.0.113.7" "$BASE/?format=json")
+echo "$apijson" | grep -q '"ip": "203.0.113.7"' && ok "?format=json returns the IP in JSON" || bad "json body wrong: [$apijson]"
+curl -sD - -o /dev/null -H "True-Client-IP: 203.0.113.7" "$BASE/?format=json" | grep -qi 'content-type: application/json' \
+  && ok "?format=json content-type is application/json" || bad "json content-type missing"
 
 # 7. Security headers present on /
 headers=$(curl -sD - -o /dev/null "$BASE/")
