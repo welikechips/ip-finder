@@ -222,6 +222,35 @@ h2 {
     left: -9999px;
 }
 
+/* WebRTC leak-check result */
+.webrtc-check {
+    margin-top: 15px;
+}
+
+.webrtc-title {
+    font-weight: bold;
+    margin-bottom: 4px;
+}
+
+.webrtc-result {
+    margin-top: 6px;
+    padding: 10px;
+    border-radius: 6px;
+    font-size: 14px;
+    border-left: 4px solid var(--border-2);
+    background-color: var(--surface-2);
+    color: var(--text);
+}
+
+.webrtc-result.webrtc-ok {
+    border-left-color: var(--accent-green);
+}
+
+.webrtc-result.webrtc-warn {
+    border-left-color: var(--warning-border);
+    background-color: var(--warning-bg);
+}
+
 .hostname {
     font-size: 14px;
     color: var(--text-muted);

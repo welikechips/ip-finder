@@ -22,7 +22,7 @@ if (!isset($_SESSION['csrf_token'])) {
 }
 
 // Set secure headers with more permissive CSP that still maintains security
-header("Content-Security-Policy: default-src 'self'; connect-src 'self' https://api.ipify.org https://ipinfo.io https://api.ip.sb https://api.myip.com; script-src 'self' 'nonce-" . htmlspecialchars($_SESSION['csrf_token']) . "'; style-src 'self'; frame-src https://api.ipify.org; img-src 'self' data:;");
+header("Content-Security-Policy: default-src 'self'; connect-src 'self' https://api.ipify.org https://ipinfo.io https://api.ip.sb https://api.myip.com stun:stun.l.google.com:19302; script-src 'self' 'nonce-" . htmlspecialchars($_SESSION['csrf_token']) . "'; style-src 'self'; frame-src https://api.ipify.org; img-src 'self' data:;");
 header("X-Frame-Options: DENY");
 header("X-Content-Type-Options: nosniff");
 header("Referrer-Policy: strict-origin-when-cross-origin");
@@ -251,6 +251,13 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
                     <span class="ip-label">Hostname:</span>
                     <span class="ip-value" id="browser-hostname">Detecting...</span>
                 </div>
+            </div>
+
+            <!-- WebRTC leak check — runs entirely in the browser, nothing sent to the server -->
+            <div class="webrtc-check">
+                <p class="webrtc-title">WebRTC Leak Check</p>
+                <p class="note-text">WebRTC can expose IP addresses that bypass a VPN. This check runs entirely in your browser — nothing is sent to the server.</p>
+                <div id="webrtc-result" class="webrtc-result">Open this tab to run the check…</div>
             </div>
 
             <!-- External service iframe fallback with proper security attributes -->
