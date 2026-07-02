@@ -89,6 +89,9 @@ $ipInfo = $externalIPData['success'] ? getIPInfo($externalIP) : null;
 // Clear any output buffer
 ob_end_clean();
 
+// Anonymization flags for the IP (Tor exit / VPN / datacenter) — best-effort heuristics.
+$ipFlags = $externalIPData['success'] ? getIPFlags($externalIP, $ipInfo) : [];
+
 // JSON for API clients (?format=json or Accept: application/json).
 if ($wantsJson) {
     header('Content-Type: application/json; charset=utf-8');
@@ -100,6 +103,7 @@ if ($wantsJson) {
         'country'  => isset($ipInfo['country']) ? $ipInfo['country'] : null,
         'org'      => isset($ipInfo['org']) ? $ipInfo['org'] : null,
         'timezone' => isset($ipInfo['timezone']) ? $ipInfo['timezone'] : null,
+        'flags'    => array_values(array_map(function ($f) { return $f['type']; }, $ipFlags)),
     ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
     exit;
 }
@@ -158,6 +162,14 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
                         <button type="button" class="copy-btn" data-copy="server-ip-value" aria-label="Copy IP address" title="Copy IP">📋</button>
                     </span>
                 </div>
+
+                <?php if (!empty($ipFlags)): ?>
+                    <div class="ip-flags">
+                        <?php foreach ($ipFlags as $flag): ?>
+                            <span class="ip-flag ip-flag-<?php echo htmlspecialchars($flag['type']); ?>"><?php echo htmlspecialchars($flag['label']); ?></span>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
 
                 <div class="ip-row">
                     <span class="ip-label">Hostname:</span>
