@@ -8,6 +8,7 @@
 header("Content-Type: application/json");
 header("X-Content-Type-Options: nosniff");
 header("X-Frame-Options: DENY");
+header("Strict-Transport-Security: max-age=63072000; includeSubDomains");
 
 // Start session for rate limiting
 session_start();
