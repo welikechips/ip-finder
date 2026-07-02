@@ -93,7 +93,7 @@ code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/hostname-lookup.php")
 
 # 7. Security headers present on /
 headers=$(curl -sD - -o /dev/null "$BASE/")
-for h in "Content-Security-Policy" "X-Content-Type-Options: nosniff" "X-Frame-Options: DENY"; do
+for h in "Content-Security-Policy" "X-Content-Type-Options: nosniff" "X-Frame-Options: DENY" "Strict-Transport-Security: max-age="; do
   echo "$headers" | grep -qi "$h" && ok "security header present: $h" || bad "missing security header: $h"
 done
 

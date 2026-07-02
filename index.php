@@ -27,6 +27,9 @@ header("X-Frame-Options: DENY");
 header("X-Content-Type-Options: nosniff");
 header("Referrer-Policy: strict-origin-when-cross-origin");
 header("Permissions-Policy: geolocation=(), microphone=(), camera=()");
+// HSTS — the site is served HTTPS-only (Render/Cloudflare), so tell browsers to always use TLS.
+// Scoped to this host + its subdomains; no preload (hard to reverse).
+header("Strict-Transport-Security: max-age=63072000; includeSubDomains");
 
 // Apply rate limiting
 if (!enforceRateLimit('main_rate_limit', 10, 60)) {
