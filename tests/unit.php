@@ -64,6 +64,9 @@ check(!isLocalIP('172.32.0.1'),                       '172.32 is NOT local');
 check(isLocalIP('127.0.0.1'),                         'loopback is local');
 check(isLocalIP('169.254.1.1'),                       'link-local is local');
 check(isLocalIP('::1'),                               'IPv6 loopback is local');
+check(isLocalIP('fc00::1'),                           'IPv6 ULA fc00::/7 is local');
+check(isLocalIP('fd12:3456:789a::1'),                 'IPv6 ULA fd00::/8 is local (regression)');
+check(!isLocalIP('2001:4860:4860::8888'),             'public IPv6 is NOT local');
 check(!isLocalIP('8.8.8.8'),                          'public IPv4 is NOT local');
 check(!isLocalIP('172.71.195.123'),                   'Cloudflare 172.71 is NOT local (regression)');
 
@@ -125,6 +128,11 @@ check(ipInList('203.0.113.9', $torSample) === false,       'IP absent -> false')
 check(ipInList('203.0.113.50', "203.0.113.5\n") === false, 'no partial-line match (.5 vs .50)');
 check(ipInList('not-an-ip', $torSample) === false,         'invalid IP -> false');
 check(ipInList('203.0.113.5', '') === false,               'empty list -> false');
+
+echo "externalServiceOrigins (CSP single-source)\n";
+is_eq(externalServiceOrigins(),
+      ['https://api.ipify.org', 'https://ipinfo.io', 'https://api.ip.sb', 'https://api.myip.com'],
+      'origins derived as scheme://host, deduped, in order');
 
 echo "\n" . $GLOBALS['__tests'] . " checks, " . $GLOBALS['__fails'] . " failed\n";
 exit($GLOBALS['__fails'] > 0 ? 1 : 0);

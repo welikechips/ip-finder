@@ -21,8 +21,11 @@ if (!isset($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 
-// Set secure headers with more permissive CSP that still maintains security
-header("Content-Security-Policy: default-src 'self'; connect-src 'self' https://api.ipify.org https://ipinfo.io https://api.ip.sb https://api.myip.com stun:stun.l.google.com:19302; script-src 'self' 'nonce-" . htmlspecialchars($_SESSION['csrf_token']) . "'; style-src 'self'; frame-src https://api.ipify.org; img-src 'self' data:;");
+// Set secure headers with more permissive CSP that still maintains security.
+// connect-src is built from the single source of truth in utils.php (externalServiceOrigins)
+// so it can't drift from the server-side lookup list; plus 'self' and the WebRTC STUN server.
+$cspConnectSrc = implode(' ', array_merge(["'self'"], externalServiceOrigins(), ['stun:stun.l.google.com:19302']));
+header("Content-Security-Policy: default-src 'self'; connect-src " . $cspConnectSrc . "; script-src 'self' 'nonce-" . htmlspecialchars($_SESSION['csrf_token']) . "'; style-src 'self'; frame-src https://api.ipify.org; img-src 'self' data:;");
 header("X-Frame-Options: DENY");
 header("X-Content-Type-Options: nosniff");
 header("Referrer-Policy: strict-origin-when-cross-origin");
