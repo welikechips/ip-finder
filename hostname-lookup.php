@@ -13,8 +13,8 @@ header("Strict-Transport-Security: max-age=63072000; includeSubDomains");
 // Include shared utility functions (rate limiting is per-IP + file-backed — no session needed)
 require_once 'utils.php';
 
-// Apply rate limiting with stricter limits for this endpoint
-if (!enforceRateLimit('hostname_rate_limit', 5, 60)) {
+// Apply rate limiting with stricter limits for this endpoint (per-IP, keyed on the client IP)
+if (!enforceRateLimit(getClientIP(), 'hostname_rate_limit', 5, 60)) {
     header('HTTP/1.1 429 Too Many Requests');
     echo json_encode(['error' => 'Rate limit exceeded. Please try again later.']);
     exit;

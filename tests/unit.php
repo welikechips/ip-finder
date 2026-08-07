@@ -49,11 +49,6 @@ check(validateIP('999.1.1.1') === false,              'rejects out-of-range octe
 check(validateIP('nope') === false,                   'rejects non-IP text');
 check(validateIP('') === false,                       'rejects empty string');
 
-echo "isValidJson\n";
-check(isValidJson('{"ip":"1.2.3.4"}') === true,       'accepts a JSON object');
-check(isValidJson('[1,2,3]') === true,                'accepts a JSON array');
-check(isValidJson('{bad') === false,                  'rejects malformed JSON');
-
 echo "isLocalIP\n";
 check(isLocalIP('192.168.1.1'),                       '192.168/16 is local');
 check(isLocalIP('10.0.0.5'),                          '10/8 is local');
@@ -101,17 +96,29 @@ check(rateLimitStep('garbage', 500, 3, 60)['state']['count'] === 1,      'malfor
 check(rateLimitStep(['count' => 5], 500, 3, 60)['state']['count'] === 1, 'partial state (no first_request) -> fresh');
 
 echo "enforceRateLimit (per-IP file bucket)\n";
-$savedServer = $_SERVER;
-unset($_SERVER['HTTP_TRUE_CLIENT_IP'], $_SERVER['HTTP_CF_CONNECTING_IP'], $_SERVER['HTTP_X_FORWARDED_FOR']);
-$_SERVER['REMOTE_ADDR'] = '203.0.113.201';   // controls getClientIP() -> the bucket key
+// IP is injected directly now — no $_SERVER mutation needed.
+$rlIp  = '203.0.113.201';
 $rlKey = 'unittest_' . getmypid() . '_' . str_replace('.', '', (string) microtime(true)); // unique per run
-check(enforceRateLimit($rlKey, 2, 60) === true,            'file bucket: request 1 allowed');
-check(enforceRateLimit($rlKey, 2, 60) === true,            'file bucket: request 2 allowed (at limit)');
-check(enforceRateLimit($rlKey, 2, 60) === false,           'file bucket: request 3 denied');
-check(enforceRateLimit('other_' . $rlKey, 2, 60) === true, 'a separate key has its own budget');
+check(enforceRateLimit($rlIp, $rlKey, 2, 60) === true,            'file bucket: request 1 allowed');
+check(enforceRateLimit($rlIp, $rlKey, 2, 60) === true,            'file bucket: request 2 allowed (at limit)');
+check(enforceRateLimit($rlIp, $rlKey, 2, 60) === false,           'file bucket: request 3 denied');
+check(enforceRateLimit($rlIp, 'other_' . $rlKey, 2, 60) === true, 'a separate key has its own budget');
+check(enforceRateLimit('203.0.113.202', $rlKey, 2, 60) === true,  'a different IP has its own budget (per-IP isolation)');
 @unlink(sys_get_temp_dir() . '/rl_' . sha1($rlKey . '|203.0.113.201') . '.json');
 @unlink(sys_get_temp_dir() . '/rl_' . sha1('other_' . $rlKey . '|203.0.113.201') . '.json');
-$_SERVER = $savedServer;
+@unlink(sys_get_temp_dir() . '/rl_' . sha1($rlKey . '|203.0.113.202') . '.json');
+
+echo "sweepRateLimitBuckets (stale bucket GC)\n";
+$tmpDir = sys_get_temp_dir();
+$freshBucket = $tmpDir . '/rl_' . sha1('sweeptest_fresh_' . getmypid()) . '.json';
+$staleBucket = $tmpDir . '/rl_' . sha1('sweeptest_stale_' . getmypid()) . '.json';
+file_put_contents($freshBucket, '{}'); touch($freshBucket, 5000);
+file_put_contents($staleBucket, '{}'); touch($staleBucket, 1000);
+// Small clock so any real bucket (mtime ~now) reads as "future" (negative age) and is left alone.
+sweepRateLimitBuckets(5000, 3600);
+check(is_file($freshBucket) === true,  'fresh bucket kept (age <= maxAge)');
+check(is_file($staleBucket) === false, 'stale bucket swept (age > maxAge)');
+@unlink($freshBucket); @unlink($staleBucket);
 
 echo "normalizeIpwhois (geolocation fallback)\n";
 // Synthetic sample using RFC-documentation values only (TEST-NET IP, doc ASN) — no real IPs.

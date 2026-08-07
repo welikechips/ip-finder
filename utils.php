@@ -13,12 +13,6 @@ function validateIP($ip) {
     return true;
 }
 
-// Function to validate JSON string
-function isValidJson($string) {
-    json_decode($string);
-    return (json_last_error() === JSON_ERROR_NONE);
-}
-
 // Check if an IP is a local network IP
 function isLocalIP($ip) {
     $localIPRanges = [
@@ -340,26 +334,49 @@ function rateLimitStep($state, $now, $maxRequests, $timeWindow) {
     return ['allowed' => $state['count'] <= $maxRequests, 'state' => $state];
 }
 
-// Per-IP rate limiting, backed by a temp-dir bucket file. Keys on the REAL client IP
-// (getClientIP) — the previous session-only version capped nothing for a client that simply
-// never sent the session cookie. flock serializes the read-modify-write for concurrent
-// same-IP requests; if the bucket file can't be opened we fail OPEN (allow) rather than lock
-// anyone out over an infra hiccup. Best-effort by design — the Render/Cloudflare edge is the
-// outer wall; this is the app-layer backstop for the cookieless case.
-function enforceRateLimit($key = 'rate_limit', $maxRequests = 10, $timeWindow = 60) {
-    $ip = getClientIP();
+// Opportunistically delete rate-limit buckets whose window elapsed long ago, so the temp dir
+// doesn't grow one file per unique visitor IP forever. $now/$maxAge are injected so it stays
+// deterministic and testable. Keeping /tmp clean also matters for safety: a full temp dir
+// makes enforceRateLimit fail open (see below), silently disabling the cap.
+function sweepRateLimitBuckets($now, $maxAge = 3600) {
+    foreach (glob(sys_get_temp_dir() . '/rl_*.json') ?: [] as $f) {
+        $mtime = @filemtime($f);
+        if ($mtime !== false && ($now - $mtime) > $maxAge) {
+            @unlink($f);
+        }
+    }
+}
+
+// Per-IP rate limiting, backed by a temp-dir bucket file. Pass in the caller's already-resolved
+// client IP ($ip, from getClientIP) — keying on the real IP is what caps a client that never
+// sends the session cookie (the old session-only version capped nothing for it). flock
+// serializes the read-modify-write for concurrent same-IP requests. If the bucket can't be
+// opened or locked we fail OPEN (allow) rather than lock anyone out over an infra hiccup — but
+// LOUDLY, via error_log, so a broken/full /tmp surfaces in ops logs instead of silently
+// switching the cap off. Best-effort by design — the Render/Cloudflare edge is the outer wall.
+function enforceRateLimit($ip, $key = 'rate_limit', $maxRequests = 10, $timeWindow = 60) {
+    $now = time();
+    if (random_int(1, 50) === 1) {   // amortized GC so buckets don't accumulate unbounded
+        sweepRateLimitBuckets($now);
+    }
+
     $bucketFile = sys_get_temp_dir() . '/rl_' . sha1($key . '|' . $ip) . '.json';
 
     $fh = @fopen($bucketFile, 'c+');
     if ($fh === false) {
-        return true; // fail open — never lock users out because a bucket file misbehaved
+        error_log("enforceRateLimit: cannot open bucket {$bucketFile} — failing open (rate limiting degraded)");
+        return true;
     }
-    @flock($fh, LOCK_EX);
+    if (!@flock($fh, LOCK_EX)) {
+        error_log("enforceRateLimit: cannot lock bucket {$bucketFile} — failing open (rate limiting degraded)");
+        fclose($fh);
+        return true;
+    }
 
     $raw = stream_get_contents($fh);
     $state = (is_string($raw) && $raw !== '') ? json_decode($raw, true) : null;
 
-    $result = rateLimitStep($state, time(), $maxRequests, $timeWindow);
+    $result = rateLimitStep($state, $now, $maxRequests, $timeWindow);
 
     rewind($fh);
     ftruncate($fh, 0);

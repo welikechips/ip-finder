@@ -40,8 +40,13 @@ header("Permissions-Policy: geolocation=(), microphone=(), camera=()");
 // Scoped to this host + its subdomains; no preload (hard to reverse).
 header("Strict-Transport-Security: max-age=63072000; includeSubDomains");
 
-// Apply rate limiting
-if (!enforceRateLimit('main_rate_limit', 10, 60)) {
+// Resolve the visitor's IP once — used for per-IP rate limiting and the reported IP below.
+// Behind Render's Cloudflare edge, getClientIP() reads the real client IP from
+// True-Client-IP / CF-Connecting-IP / the first X-Forwarded-For hop.
+$clientIP = getClientIP();
+
+// Apply per-IP rate limiting
+if (!enforceRateLimit($clientIP, 'main_rate_limit', 10, 60)) {
     header('HTTP/1.1 429 Too Many Requests');
     echo "Rate limit exceeded. Please try again later.";
     exit;
@@ -68,9 +73,6 @@ $wantsText = in_array($reqFormat, ['text', 'txt', 'plain'], true)
 // Clear the output buffer to keep stray output from the lookup functions out of the response
 ob_start();
 
-// Determine the visitor's IP. Behind Render's Cloudflare edge, getClientIP() reads the real
-// client IP from True-Client-IP / CF-Connecting-IP / the first X-Forwarded-For hop.
-$clientIP = getClientIP();
 $clientIsPublic = ($clientIP && !isLocalIP($clientIP) && $clientIP !== '0.0.0.0');
 
 if ($clientIsPublic) {
