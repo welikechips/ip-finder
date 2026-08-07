@@ -13,12 +13,6 @@ function validateIP($ip) {
     return true;
 }
 
-// Function to validate JSON string
-function isValidJson($string) {
-    json_decode($string);
-    return (json_last_error() === JSON_ERROR_NONE);
-}
-
 // Check if an IP is a local network IP
 function isLocalIP($ip) {
     $localIPRanges = [
@@ -28,7 +22,7 @@ function isLocalIP($ip) {
         '/^127\./',
         '/^169\.254\./',
         '/^::1$/',
-        '/^fc00::/'
+        '/^f[cd][0-9a-f]{2}:/i'  // fc00::/7 unique-local (fc/fd prefixes)
     ];
 
     foreach ($localIPRanges as $range) {
@@ -68,49 +62,45 @@ function getClientIP() {
     return validateIP($remoteAddr) ? $remoteAddr : '0.0.0.0';
 }
 
-// Function to get the external IP address from API services
-function getExternalIP() {
-    // Fixed list of trusted API endpoints - no user input allowed
-    $apis = [
+// Single source of truth for the external IP-lookup services. getExternalIP() curls
+// these full URLs; externalServiceOrigins() derives the scheme://host list the browser
+// CSP connect-src is built from — add a service here and both stay in sync.
+function externalIPServices() {
+    return [
         'https://api.ipify.org?format=json',
         'https://ipinfo.io/json',
         'https://api.ip.sb/jsonip',
-        'https://api.myip.com'
+        'https://api.myip.com',
     ];
+}
 
-    foreach ($apis as $api) {
-        try {
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, $api);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true); // Ensure SSL verification is enabled
-            curl_setopt($ch, CURLOPT_USERAGENT, 'IP Finder/1.0');
-            // Prevent SSRF by setting allowed protocols
-            curl_setopt($ch, CURLOPT_PROTOCOLS, CURLPROTO_HTTPS);
-            curl_setopt($ch, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTPS);
-            $response = curl_exec($ch);
-            $error = curl_error($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
+// Deduplicated scheme://host origins of externalIPServices(), order preserved. Feeds the
+// CSP connect-src in index.php so it can't drift from the server-side lookup list.
+function externalServiceOrigins() {
+    $origins = [];
+    foreach (externalIPServices() as $url) {
+        $u = parse_url($url);
+        if (isset($u['scheme'], $u['host'])) {
+            $origins[$u['scheme'] . '://' . $u['host']] = true;
+        }
+    }
+    return array_keys($origins);
+}
 
-            if ($httpCode == 200 && !empty($response)) {
-                // Validate JSON structure before parsing
-                if (!isValidJson($response)) {
-                    continue;
-                }
-
-                $data = json_decode($response, true);
-
-                // Improved schema validation
-                if (isset($data['ip']) && validateIP($data['ip'])) {
-                    return ['success' => true, 'ip' => $data['ip']];
-                } else if (isset($data['query']) && validateIP($data['query'])) {
-                    return ['success' => true, 'ip' => $data['query']];
-                }
-            }
-        } catch (Exception $e) {
-            continue; // Try the next API
+// Function to get the external IP address from API services
+function getExternalIP() {
+    // Fixed list of trusted, HTTPS-only endpoints (externalIPServices) — no user input.
+    // httpGetJson enforces HTTPS + SSL verification and returns decoded JSON or null.
+    foreach (externalIPServices() as $api) {
+        $data = httpGetJson($api);
+        if (!is_array($data)) {
+            continue;
+        }
+        if (isset($data['ip']) && validateIP($data['ip'])) {
+            return ['success' => true, 'ip' => $data['ip']];
+        }
+        if (isset($data['query']) && validateIP($data['query'])) {
+            return ['success' => true, 'ip' => $data['query']];
         }
     }
 
@@ -132,8 +122,11 @@ function httpGetJson($url, $timeout = 5) {
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
-    if ($httpCode == 200 && !empty($response) && isValidJson($response)) {
-        return json_decode($response, true);
+    if ($httpCode == 200 && !empty($response)) {
+        $data = json_decode($response, true);
+        if (json_last_error() === JSON_ERROR_NONE) {
+            return $data;
+        }
     }
     return null;
 }
@@ -304,27 +297,11 @@ function resolveHostname($ip) {
         // Silent fail, continue to next method
     }
 
-    // Method 3: Use an external API as last resort
-    try {
-        $ch = curl_init();
-        // Using ipinfo.io which is good at hostname lookups
-        curl_setopt($ch, CURLOPT_URL, "https://ipinfo.io/{$ip}/json");
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 3);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'IP Finder/1.0');
-        $response = curl_exec($ch);
-        curl_close($ch);
-
-        if (!empty($response)) {
-            // Validate JSON response
-            $data = json_decode($response, true);
-            if (json_last_error() === JSON_ERROR_NONE && isset($data['hostname'])) {
-                return $data['hostname'];
-            }
-        }
-    } catch (Exception $e) {
-        // Silent fail
+    // Method 3: external API as last resort — HTTPS-hardened via the shared helper
+    // (ipinfo.io is good at hostname lookups).
+    $data = httpGetJson("https://ipinfo.io/{$ip}/json", 3);
+    if (is_array($data) && isset($data['hostname'])) {
+        return $data['hostname'];
     }
 
     // Last attempt - try to specifically handle AWS EC2 instances
@@ -344,31 +321,70 @@ function resolveHostname($ip) {
     return null;
 }
 
-// Simple rate limiting function
-function enforceRateLimit($key = 'rate_limit', $maxRequests = 10, $timeWindow = 60) {
-    if (!isset($_SESSION[$key])) {
-        $_SESSION[$key] = [
-            'count' => 0,
-            'first_request' => time()
-        ];
+// Pure rate-limit decision — no I/O, injectable clock, so it's unit-testable. Given the
+// current bucket state and $now, return the updated state plus whether this request is
+// allowed. $state is ['count'=>int, 'first_request'=>int]; anything malformed or a window
+// that has fully elapsed starts a fresh window.
+function rateLimitStep($state, $now, $maxRequests, $timeWindow) {
+    if (!is_array($state) || !isset($state['count'], $state['first_request'])
+        || ($now - $state['first_request']) > $timeWindow) {
+        $state = ['count' => 0, 'first_request' => $now];
+    }
+    $state['count']++;
+    return ['allowed' => $state['count'] <= $maxRequests, 'state' => $state];
+}
+
+// Opportunistically delete rate-limit buckets whose window elapsed long ago, so the temp dir
+// doesn't grow one file per unique visitor IP forever. $now/$maxAge are injected so it stays
+// deterministic and testable. Keeping /tmp clean also matters for safety: a full temp dir
+// makes enforceRateLimit fail open (see below), silently disabling the cap.
+function sweepRateLimitBuckets($now, $maxAge = 3600) {
+    foreach (glob(sys_get_temp_dir() . '/rl_*.json') ?: [] as $f) {
+        $mtime = @filemtime($f);
+        if ($mtime !== false && ($now - $mtime) > $maxAge) {
+            @unlink($f);
+        }
+    }
+}
+
+// Per-IP rate limiting, backed by a temp-dir bucket file. Pass in the caller's already-resolved
+// client IP ($ip, from getClientIP) — keying on the real IP is what caps a client that never
+// sends the session cookie (the old session-only version capped nothing for it). flock
+// serializes the read-modify-write for concurrent same-IP requests. If the bucket can't be
+// opened or locked we fail OPEN (allow) rather than lock anyone out over an infra hiccup — but
+// LOUDLY, via error_log, so a broken/full /tmp surfaces in ops logs instead of silently
+// switching the cap off. Best-effort by design — the Render/Cloudflare edge is the outer wall.
+function enforceRateLimit($ip, $key = 'rate_limit', $maxRequests = 10, $timeWindow = 60) {
+    $now = time();
+    if (random_int(1, 50) === 1) {   // amortized GC so buckets don't accumulate unbounded
+        sweepRateLimitBuckets($now);
     }
 
-    // Reset counter if time window has passed
-    if (time() - $_SESSION[$key]['first_request'] > $timeWindow) {
-        $_SESSION[$key] = [
-            'count' => 0,
-            'first_request' => time()
-        ];
+    $bucketFile = sys_get_temp_dir() . '/rl_' . sha1($key . '|' . $ip) . '.json';
+
+    $fh = @fopen($bucketFile, 'c+');
+    if ($fh === false) {
+        error_log("enforceRateLimit: cannot open bucket {$bucketFile} — failing open (rate limiting degraded)");
+        return true;
+    }
+    if (!@flock($fh, LOCK_EX)) {
+        error_log("enforceRateLimit: cannot lock bucket {$bucketFile} — failing open (rate limiting degraded)");
+        fclose($fh);
+        return true;
     }
 
-    // Increment counter
-    $_SESSION[$key]['count']++;
+    $raw = stream_get_contents($fh);
+    $state = (is_string($raw) && $raw !== '') ? json_decode($raw, true) : null;
 
-    // Check if limit exceeded
-    if ($_SESSION[$key]['count'] > $maxRequests) {
-        return false; // Rate limit exceeded
-    }
+    $result = rateLimitStep($state, $now, $maxRequests, $timeWindow);
 
-    return true; // Rate limit not exceeded
+    rewind($fh);
+    ftruncate($fh, 0);
+    fwrite($fh, json_encode($result['state']));
+    fflush($fh);
+    @flock($fh, LOCK_UN);
+    fclose($fh);
+
+    return $result['allowed'];
 }
 ?>

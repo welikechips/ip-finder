@@ -277,21 +277,6 @@ h2 {
 .ip-flag-vpn {
     border-color: var(--accent);
 }
-.hostname {
-    font-size: 14px;
-    color: var(--text-muted);
-    margin-top: 5px;
-    font-style: italic;
-}
-
-.proxy-warning {
-    margin: 15px 0;
-    padding: 10px;
-    background-color: var(--warning-bg);
-    border-left: 4px solid var(--warning-border);
-    border-radius: 4px;
-    font-size: 14px;
-}
 
 .location-info {
     margin: 20px 0;

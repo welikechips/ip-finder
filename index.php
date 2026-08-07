@@ -21,8 +21,17 @@ if (!isset($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 
-// Set secure headers with more permissive CSP that still maintains security
-header("Content-Security-Policy: default-src 'self'; connect-src 'self' https://api.ipify.org https://ipinfo.io https://api.ip.sb https://api.myip.com stun:stun.l.google.com:19302; script-src 'self' 'nonce-" . htmlspecialchars($_SESSION['csrf_token']) . "'; style-src 'self'; frame-src https://api.ipify.org; img-src 'self' data:;");
+// Per-request CSP nonce — freshly minted every response and kept SEPARATE from the CSRF
+// token. A nonce's whole job is to be unguessable per response; reusing the session-static,
+// DOM-embedded CSRF value for it defeats that. This is never stored or echoed into a form
+// field — only into the CSP header and the matching <script nonce> tags below.
+$cspNonce = base64_encode(random_bytes(16));
+
+// Set secure headers with more permissive CSP that still maintains security.
+// connect-src is built from the single source of truth in utils.php (externalServiceOrigins)
+// so it can't drift from the server-side lookup list; plus 'self' and the WebRTC STUN server.
+$cspConnectSrc = implode(' ', array_merge(["'self'"], externalServiceOrigins(), ['stun:stun.l.google.com:19302']));
+header("Content-Security-Policy: default-src 'self'; connect-src " . $cspConnectSrc . "; script-src 'self' 'nonce-" . $cspNonce . "'; style-src 'self'; frame-src https://api.ipify.org; img-src 'self' data:;");
 header("X-Frame-Options: DENY");
 header("X-Content-Type-Options: nosniff");
 header("Referrer-Policy: strict-origin-when-cross-origin");
@@ -31,8 +40,13 @@ header("Permissions-Policy: geolocation=(), microphone=(), camera=()");
 // Scoped to this host + its subdomains; no preload (hard to reverse).
 header("Strict-Transport-Security: max-age=63072000; includeSubDomains");
 
-// Apply rate limiting
-if (!enforceRateLimit('main_rate_limit', 10, 60)) {
+// Resolve the visitor's IP once — used for per-IP rate limiting and the reported IP below.
+// Behind Render's Cloudflare edge, getClientIP() reads the real client IP from
+// True-Client-IP / CF-Connecting-IP / the first X-Forwarded-For hop.
+$clientIP = getClientIP();
+
+// Apply per-IP rate limiting
+if (!enforceRateLimit($clientIP, 'main_rate_limit', 10, 60)) {
     header('HTTP/1.1 429 Too Many Requests');
     echo "Rate limit exceeded. Please try again later.";
     exit;
@@ -59,9 +73,6 @@ $wantsText = in_array($reqFormat, ['text', 'txt', 'plain'], true)
 // Clear the output buffer to keep stray output from the lookup functions out of the response
 ob_start();
 
-// Determine the visitor's IP. Behind Render's Cloudflare edge, getClientIP() reads the real
-// client IP from True-Client-IP / CF-Connecting-IP / the first X-Forwarded-For hop.
-$clientIP = getClientIP();
 $clientIsPublic = ($clientIP && !isLocalIP($clientIP) && $clientIP !== '0.0.0.0');
 
 if ($clientIsPublic) {
@@ -108,11 +119,6 @@ if ($wantsJson) {
     exit;
 }
 
-// We now report the client IP directly, so the old server-vs-client proxy
-// comparison no longer applies — no false "VPN detected" banner.
-$clientHostname = null;
-$usingProxy = false;
-
 // App version = the deployed git commit. Render injects RENDER_GIT_COMMIT at runtime;
 // GIT_COMMIT can be baked at build time; otherwise it's a local/dev build.
 $appCommit = getenv('RENDER_GIT_COMMIT') ?: getenv('GIT_COMMIT') ?: '';
@@ -127,7 +133,7 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
     <title>Just the tIP</title>
     <link rel="stylesheet" href="public/css/styles.css">
     <link rel="icon" href="data:,">
-    <script nonce="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+    <script nonce="<?php echo htmlspecialchars($cspNonce); ?>">
         // Apply a saved theme override before first paint to avoid a flash. Client-only.
         (function () {
             try {
@@ -191,22 +197,6 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
             <p class="note-text">Note: This is the IP address your connection presents to this server. Browser-based
                 proxies (e.g. FoxyProxy) may differ — see Browser Detection.</p>
         </div>
-
-        <!-- Proxy/VPN Detection -->
-        <?php if ($usingProxy): ?>
-            <div class="proxy-warning">
-                <strong>VPN/Proxy Detected:</strong> Your connection appears to be going through a proxy or VPN.
-                <div class="ip-row-noborder">
-                    <span class="ip-label">Direct Client IP:</span>
-                    <span class="ip-value"><?php echo htmlspecialchars($clientIP); ?></span>
-                </div>
-                <?php if ($clientHostname): ?>
-                    <div class="hostname">
-                        Hostname: <?php echo htmlspecialchars($clientHostname); ?>
-                    </div>
-                <?php endif; ?>
-            </div>
-        <?php endif; ?>
 
         <!-- Additional IP Information -->
         <?php if ($ipInfo): ?>
@@ -307,6 +297,6 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
 </div>
 
 <!-- External JavaScript file with enhanced security -->
-<script nonce="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>" src="public/js/ip-finder.js"></script>
+<script nonce="<?php echo htmlspecialchars($cspNonce); ?>" src="public/js/ip-finder.js"></script>
 </body>
 </html>

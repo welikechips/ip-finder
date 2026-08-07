@@ -49,11 +49,6 @@ check(validateIP('999.1.1.1') === false,              'rejects out-of-range octe
 check(validateIP('nope') === false,                   'rejects non-IP text');
 check(validateIP('') === false,                       'rejects empty string');
 
-echo "isValidJson\n";
-check(isValidJson('{"ip":"1.2.3.4"}') === true,       'accepts a JSON object');
-check(isValidJson('[1,2,3]') === true,                'accepts a JSON array');
-check(isValidJson('{bad') === false,                  'rejects malformed JSON');
-
 echo "isLocalIP\n";
 check(isLocalIP('192.168.1.1'),                       '192.168/16 is local');
 check(isLocalIP('10.0.0.5'),                          '10/8 is local');
@@ -64,6 +59,9 @@ check(!isLocalIP('172.32.0.1'),                       '172.32 is NOT local');
 check(isLocalIP('127.0.0.1'),                         'loopback is local');
 check(isLocalIP('169.254.1.1'),                       'link-local is local');
 check(isLocalIP('::1'),                               'IPv6 loopback is local');
+check(isLocalIP('fc00::1'),                           'IPv6 ULA fc00::/7 is local');
+check(isLocalIP('fd12:3456:789a::1'),                 'IPv6 ULA fd00::/8 is local (regression)');
+check(!isLocalIP('2001:4860:4860::8888'),             'public IPv6 is NOT local');
 check(!isLocalIP('8.8.8.8'),                          'public IPv4 is NOT local');
 check(!isLocalIP('172.71.195.123'),                   'Cloudflare 172.71 is NOT local (regression)');
 
@@ -81,13 +79,46 @@ is_eq(client_ip_with(['REMOTE_ADDR' => '8.8.8.8']),
 is_eq(client_ip_with([]),
       '0.0.0.0', 'nothing set -> 0.0.0.0');
 
-echo "enforceRateLimit\n";
-$_SESSION = [];
-check(enforceRateLimit('t', 3, 60) === true,          'request 1 under limit');
-check(enforceRateLimit('t', 3, 60) === true,          'request 2 under limit');
-check(enforceRateLimit('t', 3, 60) === true,          'request 3 at limit');
-check(enforceRateLimit('t', 3, 60) === false,         'request 4 exceeds limit');
-check(enforceRateLimit('other', 3, 60) === true,      'a separate key has its own budget');
+echo "rateLimitStep (pure rate-limit decision)\n";
+$s = rateLimitStep(null, 1000, 3, 60);
+check($s['allowed'] === true  && $s['state']['count'] === 1, 'fresh bucket: request 1 allowed, count=1');
+$s = rateLimitStep($s['state'], 1001, 3, 60);
+check($s['allowed'] === true  && $s['state']['count'] === 2, 'request 2 allowed, count=2');
+$s = rateLimitStep($s['state'], 1002, 3, 60);
+check($s['allowed'] === true  && $s['state']['count'] === 3, 'request 3 allowed (at limit)');
+$s = rateLimitStep($s['state'], 1003, 3, 60);
+check($s['allowed'] === false && $s['state']['count'] === 4, 'request 4 denied (over limit)');
+$s = rateLimitStep(['count' => 2, 'first_request' => 1000], 1060, 3, 60);
+check($s['allowed'] === true  && $s['state']['count'] === 3, 'exactly at window edge -> same window (boundary)');
+$s = rateLimitStep(['count' => 99, 'first_request' => 1000], 1061, 3, 60);
+check($s['allowed'] === true  && $s['state']['count'] === 1, 'window elapsed -> counter resets');
+check(rateLimitStep('garbage', 500, 3, 60)['state']['count'] === 1,      'malformed state -> fresh bucket');
+check(rateLimitStep(['count' => 5], 500, 3, 60)['state']['count'] === 1, 'partial state (no first_request) -> fresh');
+
+echo "enforceRateLimit (per-IP file bucket)\n";
+// IP is injected directly now — no $_SERVER mutation needed.
+$rlIp  = '203.0.113.201';
+$rlKey = 'unittest_' . getmypid() . '_' . str_replace('.', '', (string) microtime(true)); // unique per run
+check(enforceRateLimit($rlIp, $rlKey, 2, 60) === true,            'file bucket: request 1 allowed');
+check(enforceRateLimit($rlIp, $rlKey, 2, 60) === true,            'file bucket: request 2 allowed (at limit)');
+check(enforceRateLimit($rlIp, $rlKey, 2, 60) === false,           'file bucket: request 3 denied');
+check(enforceRateLimit($rlIp, 'other_' . $rlKey, 2, 60) === true, 'a separate key has its own budget');
+check(enforceRateLimit('203.0.113.202', $rlKey, 2, 60) === true,  'a different IP has its own budget (per-IP isolation)');
+@unlink(sys_get_temp_dir() . '/rl_' . sha1($rlKey . '|203.0.113.201') . '.json');
+@unlink(sys_get_temp_dir() . '/rl_' . sha1('other_' . $rlKey . '|203.0.113.201') . '.json');
+@unlink(sys_get_temp_dir() . '/rl_' . sha1($rlKey . '|203.0.113.202') . '.json');
+
+echo "sweepRateLimitBuckets (stale bucket GC)\n";
+$tmpDir = sys_get_temp_dir();
+$freshBucket = $tmpDir . '/rl_' . sha1('sweeptest_fresh_' . getmypid()) . '.json';
+$staleBucket = $tmpDir . '/rl_' . sha1('sweeptest_stale_' . getmypid()) . '.json';
+file_put_contents($freshBucket, '{}'); touch($freshBucket, 5000);
+file_put_contents($staleBucket, '{}'); touch($staleBucket, 1000);
+// Small clock so any real bucket (mtime ~now) reads as "future" (negative age) and is left alone.
+sweepRateLimitBuckets(5000, 3600);
+check(is_file($freshBucket) === true,  'fresh bucket kept (age <= maxAge)');
+check(is_file($staleBucket) === false, 'stale bucket swept (age > maxAge)');
+@unlink($freshBucket); @unlink($staleBucket);
 
 echo "normalizeIpwhois (geolocation fallback)\n";
 // Synthetic sample using RFC-documentation values only (TEST-NET IP, doc ASN) — no real IPs.
@@ -125,6 +156,11 @@ check(ipInList('203.0.113.9', $torSample) === false,       'IP absent -> false')
 check(ipInList('203.0.113.50', "203.0.113.5\n") === false, 'no partial-line match (.5 vs .50)');
 check(ipInList('not-an-ip', $torSample) === false,         'invalid IP -> false');
 check(ipInList('203.0.113.5', '') === false,               'empty list -> false');
+
+echo "externalServiceOrigins (CSP single-source)\n";
+is_eq(externalServiceOrigins(),
+      ['https://api.ipify.org', 'https://ipinfo.io', 'https://api.ip.sb', 'https://api.myip.com'],
+      'origins derived as scheme://host, deduped, in order');
 
 echo "\n" . $GLOBALS['__tests'] . " checks, " . $GLOBALS['__fails'] . " failed\n";
 exit($GLOBALS['__fails'] > 0 ? 1 : 0);
