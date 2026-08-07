@@ -10,10 +10,7 @@ header("X-Content-Type-Options: nosniff");
 header("X-Frame-Options: DENY");
 header("Strict-Transport-Security: max-age=63072000; includeSubDomains");
 
-// Start session for rate limiting
-session_start();
-
-// Include shared utility functions
+// Include shared utility functions (rate limiting is per-IP + file-backed — no session needed)
 require_once 'utils.php';
 
 // Apply rate limiting with stricter limits for this endpoint

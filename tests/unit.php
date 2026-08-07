@@ -84,13 +84,34 @@ is_eq(client_ip_with(['REMOTE_ADDR' => '8.8.8.8']),
 is_eq(client_ip_with([]),
       '0.0.0.0', 'nothing set -> 0.0.0.0');
 
-echo "enforceRateLimit\n";
-$_SESSION = [];
-check(enforceRateLimit('t', 3, 60) === true,          'request 1 under limit');
-check(enforceRateLimit('t', 3, 60) === true,          'request 2 under limit');
-check(enforceRateLimit('t', 3, 60) === true,          'request 3 at limit');
-check(enforceRateLimit('t', 3, 60) === false,         'request 4 exceeds limit');
-check(enforceRateLimit('other', 3, 60) === true,      'a separate key has its own budget');
+echo "rateLimitStep (pure rate-limit decision)\n";
+$s = rateLimitStep(null, 1000, 3, 60);
+check($s['allowed'] === true  && $s['state']['count'] === 1, 'fresh bucket: request 1 allowed, count=1');
+$s = rateLimitStep($s['state'], 1001, 3, 60);
+check($s['allowed'] === true  && $s['state']['count'] === 2, 'request 2 allowed, count=2');
+$s = rateLimitStep($s['state'], 1002, 3, 60);
+check($s['allowed'] === true  && $s['state']['count'] === 3, 'request 3 allowed (at limit)');
+$s = rateLimitStep($s['state'], 1003, 3, 60);
+check($s['allowed'] === false && $s['state']['count'] === 4, 'request 4 denied (over limit)');
+$s = rateLimitStep(['count' => 2, 'first_request' => 1000], 1060, 3, 60);
+check($s['allowed'] === true  && $s['state']['count'] === 3, 'exactly at window edge -> same window (boundary)');
+$s = rateLimitStep(['count' => 99, 'first_request' => 1000], 1061, 3, 60);
+check($s['allowed'] === true  && $s['state']['count'] === 1, 'window elapsed -> counter resets');
+check(rateLimitStep('garbage', 500, 3, 60)['state']['count'] === 1,      'malformed state -> fresh bucket');
+check(rateLimitStep(['count' => 5], 500, 3, 60)['state']['count'] === 1, 'partial state (no first_request) -> fresh');
+
+echo "enforceRateLimit (per-IP file bucket)\n";
+$savedServer = $_SERVER;
+unset($_SERVER['HTTP_TRUE_CLIENT_IP'], $_SERVER['HTTP_CF_CONNECTING_IP'], $_SERVER['HTTP_X_FORWARDED_FOR']);
+$_SERVER['REMOTE_ADDR'] = '203.0.113.201';   // controls getClientIP() -> the bucket key
+$rlKey = 'unittest_' . getmypid() . '_' . str_replace('.', '', (string) microtime(true)); // unique per run
+check(enforceRateLimit($rlKey, 2, 60) === true,            'file bucket: request 1 allowed');
+check(enforceRateLimit($rlKey, 2, 60) === true,            'file bucket: request 2 allowed (at limit)');
+check(enforceRateLimit($rlKey, 2, 60) === false,           'file bucket: request 3 denied');
+check(enforceRateLimit('other_' . $rlKey, 2, 60) === true, 'a separate key has its own budget');
+@unlink(sys_get_temp_dir() . '/rl_' . sha1($rlKey . '|203.0.113.201') . '.json');
+@unlink(sys_get_temp_dir() . '/rl_' . sha1('other_' . $rlKey . '|203.0.113.201') . '.json');
+$_SERVER = $savedServer;
 
 echo "normalizeIpwhois (geolocation fallback)\n";
 // Synthetic sample using RFC-documentation values only (TEST-NET IP, doc ASN) — no real IPs.

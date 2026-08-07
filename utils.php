@@ -327,31 +327,47 @@ function resolveHostname($ip) {
     return null;
 }
 
-// Simple rate limiting function
+// Pure rate-limit decision — no I/O, injectable clock, so it's unit-testable. Given the
+// current bucket state and $now, return the updated state plus whether this request is
+// allowed. $state is ['count'=>int, 'first_request'=>int]; anything malformed or a window
+// that has fully elapsed starts a fresh window.
+function rateLimitStep($state, $now, $maxRequests, $timeWindow) {
+    if (!is_array($state) || !isset($state['count'], $state['first_request'])
+        || ($now - $state['first_request']) > $timeWindow) {
+        $state = ['count' => 0, 'first_request' => $now];
+    }
+    $state['count']++;
+    return ['allowed' => $state['count'] <= $maxRequests, 'state' => $state];
+}
+
+// Per-IP rate limiting, backed by a temp-dir bucket file. Keys on the REAL client IP
+// (getClientIP) — the previous session-only version capped nothing for a client that simply
+// never sent the session cookie. flock serializes the read-modify-write for concurrent
+// same-IP requests; if the bucket file can't be opened we fail OPEN (allow) rather than lock
+// anyone out over an infra hiccup. Best-effort by design — the Render/Cloudflare edge is the
+// outer wall; this is the app-layer backstop for the cookieless case.
 function enforceRateLimit($key = 'rate_limit', $maxRequests = 10, $timeWindow = 60) {
-    if (!isset($_SESSION[$key])) {
-        $_SESSION[$key] = [
-            'count' => 0,
-            'first_request' => time()
-        ];
+    $ip = getClientIP();
+    $bucketFile = sys_get_temp_dir() . '/rl_' . sha1($key . '|' . $ip) . '.json';
+
+    $fh = @fopen($bucketFile, 'c+');
+    if ($fh === false) {
+        return true; // fail open — never lock users out because a bucket file misbehaved
     }
+    @flock($fh, LOCK_EX);
 
-    // Reset counter if time window has passed
-    if (time() - $_SESSION[$key]['first_request'] > $timeWindow) {
-        $_SESSION[$key] = [
-            'count' => 0,
-            'first_request' => time()
-        ];
-    }
+    $raw = stream_get_contents($fh);
+    $state = (is_string($raw) && $raw !== '') ? json_decode($raw, true) : null;
 
-    // Increment counter
-    $_SESSION[$key]['count']++;
+    $result = rateLimitStep($state, time(), $maxRequests, $timeWindow);
 
-    // Check if limit exceeded
-    if ($_SESSION[$key]['count'] > $maxRequests) {
-        return false; // Rate limit exceeded
-    }
+    rewind($fh);
+    ftruncate($fh, 0);
+    fwrite($fh, json_encode($result['state']));
+    fflush($fh);
+    @flock($fh, LOCK_UN);
+    fclose($fh);
 
-    return true; // Rate limit not exceeded
+    return $result['allowed'];
 }
 ?>

@@ -49,29 +49,35 @@ echo "==> HTTP endpoint checks"
 # checks below must present as a browser to receive the HTML.
 UA_HTML="Mozilla/5.0 (test-suite)"
 
+# Rate limiting now keys on the visitor IP, so give each independent page-load check a
+# distinct client IP (RFC 5737 TEST-NET-2) — the suite models many visitors, not one client
+# hammering the server (which per-IP limiting would correctly start returning 429 for).
+IPCTR=0
+GET() { IPCTR=$((IPCTR + 1)); curl -s -A "$UA_HTML" -H "True-Client-IP: 198.51.100.$IPCTR" "$@"; }
+
 # 1. Home page serves
-code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/")
+code=$(GET -o /dev/null -w '%{http_code}' "$BASE/")
 [ "$code" = "200" ] && ok "GET / -> 200" || bad "GET / -> $code (want 200)"
 
 # 1b. Version (deployed git SHA) shows in the footer
-curl -s -A "$UA_HTML" "$BASE/" | grep -q "$GIT_SHORT" \
+GET "$BASE/" | grep -q "$GIT_SHORT" \
   && ok "version rendered (git $GIT_SHORT)" || bad "version SHA $GIT_SHORT not rendered"
 
 # 1c. Timestamp shows Eastern timezone (EDT/EST)
-curl -s -A "$UA_HTML" "$BASE/" | grep -qE 'Last updated:.*(EDT|EST)' \
+GET "$BASE/" | grep -qE 'Last updated:.*(EDT|EST)' \
   && ok "timestamp shows Eastern tz (EDT/EST)" || bad "timestamp missing Eastern tz"
 
 # 1d. Privacy disclaimer is present
-curl -s -A "$UA_HTML" "$BASE/" | grep -qi 'Privacy' \
+GET "$BASE/" | grep -qi 'Privacy' \
   && ok "privacy disclaimer shown" || bad "privacy disclaimer missing"
 
 # 1e. Theme toggle + copy-IP button present
-curl -s -A "$UA_HTML" "$BASE/" | grep -q 'id="theme-toggle"' && ok "theme toggle present" || bad "theme toggle missing"
-curl -s -A "$UA_HTML" "$BASE/" | grep -q 'class="copy-btn"' && ok "copy-IP button present" || bad "copy-IP button missing"
+GET "$BASE/" | grep -q 'id="theme-toggle"' && ok "theme toggle present" || bad "theme toggle missing"
+GET "$BASE/" | grep -q 'class="copy-btn"' && ok "copy-IP button present" || bad "copy-IP button missing"
 
 # 1f. WebRTC leak-check section present + CSP allows the STUN server
-curl -s -A "$UA_HTML" "$BASE/" | grep -q 'id="webrtc-result"' && ok "WebRTC leak-check section present" || bad "WebRTC section missing"
-curl -sD - -o /dev/null "$BASE/" | grep -qi 'stun:stun.l.google.com' && ok "CSP allows STUN for WebRTC" || bad "CSP missing STUN source"
+GET "$BASE/" | grep -q 'id="webrtc-result"' && ok "WebRTC leak-check section present" || bad "WebRTC section missing"
+GET -D - -o /dev/null "$BASE/" | grep -qi 'stun:stun.l.google.com' && ok "CSP allows STUN for WebRTC" || bad "CSP missing STUN source"
 
 # 2. True-Client-IP is reported as the visitor IP (on the HTML page)
 curl -s -A "$UA_HTML" -H "True-Client-IP: 1.1.1.1" "$BASE/" | grep -q "1.1.1.1" \
@@ -114,7 +120,7 @@ curl -s -H "True-Client-IP: 8.8.8.8" "$BASE/?format=json" | grep -q '"flags"' \
   && ok "JSON includes a flags array" || bad "JSON flags array missing"
 
 # 7. Security headers present on /
-headers=$(curl -sD - -o /dev/null "$BASE/")
+headers=$(GET -D - -o /dev/null "$BASE/")
 for h in "Content-Security-Policy" "X-Content-Type-Options: nosniff" "X-Frame-Options: DENY" "Strict-Transport-Security: max-age="; do
   echo "$headers" | grep -qi "$h" && ok "security header present: $h" || bad "missing security header: $h"
 done
@@ -122,7 +128,7 @@ done
 # 7b. CSP nonce is per-request AND decoupled from the CSRF token. A header/tag mismatch would
 #     silently break every script under CSP, so assert the header nonce == the <script> nonce,
 #     and that it is NOT the (session-static, DOM-embedded) CSRF token.
-resp=$(curl -s -A "$UA_HTML" -D - "$BASE/")
+resp=$(GET -D - "$BASE/")
 csp_nonce=$(printf '%s' "$resp" | grep -i 'content-security-policy' | grep -oE "nonce-[A-Za-z0-9+/=]+" | head -1 | sed 's/^nonce-//')
 tag_nonce=$(printf '%s' "$resp" | grep -oE 'script nonce="[A-Za-z0-9+/=]+"' | head -1 | sed -E 's/.*nonce="([^"]*)".*/\1/')
 csrf_tok=$(printf '%s' "$resp" | grep -oE 'name="csrf_token" value="[A-Za-z0-9]+"' | head -1 | sed -E 's/.*value="([^"]*)".*/\1/')
@@ -133,21 +139,37 @@ else
 fi
 
 # 7c. CSP nonce rotates per request (a second fetch yields a different nonce)
-csp_nonce2=$(curl -s -A "$UA_HTML" -D - "$BASE/" | grep -i 'content-security-policy' | grep -oE "nonce-[A-Za-z0-9+/=]+" | head -1 | sed 's/^nonce-//')
+csp_nonce2=$(GET -D - "$BASE/" | grep -i 'content-security-policy' | grep -oE "nonce-[A-Za-z0-9+/=]+" | head -1 | sed 's/^nonce-//')
 if [ -n "$csp_nonce2" ] && [ "$csp_nonce" != "$csp_nonce2" ]; then
   ok "CSP nonce is per-request (rotates)"
 else
   bad "CSP nonce not rotating ('$csp_nonce' vs '$csp_nonce2')"
 fi
 
-# 8. Rate limiting on hostname-lookup (5/60) -> a 429 shows within 7 shared-session hits
-jar=$(mktemp); saw429=0
-for _ in $(seq 1 7); do
-  c=$(curl -s -c "$jar" -b "$jar" -o /dev/null -w '%{http_code}' "$BASE/hostname-lookup.php?ip=8.8.8.8")
+# 8. Per-IP rate limiting: the limiter keys on the client IP, so a client that never sends a
+#    cookie still can't shed its limit. Hammer the fast text path from ONE fixed visitor IP.
+saw429=0
+for _ in $(seq 1 13); do
+  c=$(curl -s -A "curl/8.0" -H "True-Client-IP: 198.51.100.240" -o /dev/null -w '%{http_code}' "$BASE/")
   [ "$c" = "429" ] && saw429=1
 done
-rm -f "$jar"
-[ "$saw429" = 1 ] && ok "rate limit returns 429 when exceeded" || bad "rate limit never triggered"
+[ "$saw429" = 1 ] && ok "per-IP rate limit 429 for one hammering IP (cookieless)" || bad "per-IP rate limit never triggered"
+
+# 8b. Per-IP isolation: distinct visitor IPs each get their own budget (not one global counter).
+iso_ok=1
+for i in $(seq 1 13); do
+  c=$(curl -s -A "curl/8.0" -H "True-Client-IP: 192.0.2.$i" -o /dev/null -w '%{http_code}' "$BASE/")
+  [ "$c" = "200" ] || iso_ok=0
+done
+[ "$iso_ok" = 1 ] && ok "distinct IPs are not limited by each other (per-IP isolation)" || bad "distinct IPs got limited (isolation broken)"
+
+# 8c. hostname-lookup keeps a tighter per-IP budget (5/60), also cookieless.
+saw429=0
+for _ in $(seq 1 7); do
+  c=$(curl -s -H "True-Client-IP: 198.51.100.241" -o /dev/null -w '%{http_code}' "$BASE/hostname-lookup.php?ip=8.8.8.8")
+  [ "$c" = "429" ] && saw429=1
+done
+[ "$saw429" = 1 ] && ok "hostname-lookup per-IP rate limit 429 (cookieless)" || bad "hostname-lookup rate limit never triggered"
 
 # 9. Privacy: access logging disabled -> no visitor requests recorded in the container logs
 #    (all the curls above would show up here if access logging were on)
