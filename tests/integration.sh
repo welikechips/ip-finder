@@ -119,6 +119,27 @@ for h in "Content-Security-Policy" "X-Content-Type-Options: nosniff" "X-Frame-Op
   echo "$headers" | grep -qi "$h" && ok "security header present: $h" || bad "missing security header: $h"
 done
 
+# 7b. CSP nonce is per-request AND decoupled from the CSRF token. A header/tag mismatch would
+#     silently break every script under CSP, so assert the header nonce == the <script> nonce,
+#     and that it is NOT the (session-static, DOM-embedded) CSRF token.
+resp=$(curl -s -A "$UA_HTML" -D - "$BASE/")
+csp_nonce=$(printf '%s' "$resp" | grep -i 'content-security-policy' | grep -oE "nonce-[A-Za-z0-9+/=]+" | head -1 | sed 's/^nonce-//')
+tag_nonce=$(printf '%s' "$resp" | grep -oE 'script nonce="[A-Za-z0-9+/=]+"' | head -1 | sed -E 's/.*nonce="([^"]*)".*/\1/')
+csrf_tok=$(printf '%s' "$resp" | grep -oE 'name="csrf_token" value="[A-Za-z0-9]+"' | head -1 | sed -E 's/.*value="([^"]*)".*/\1/')
+if [ -n "$csp_nonce" ] && [ "$csp_nonce" = "$tag_nonce" ] && [ -n "$csrf_tok" ] && [ "$csp_nonce" != "$csrf_tok" ]; then
+  ok "CSP nonce matches script tags and differs from CSRF token"
+else
+  bad "CSP nonce decoupling failed (csp='$csp_nonce' tag='$tag_nonce' csrf='$csrf_tok')"
+fi
+
+# 7c. CSP nonce rotates per request (a second fetch yields a different nonce)
+csp_nonce2=$(curl -s -A "$UA_HTML" -D - "$BASE/" | grep -i 'content-security-policy' | grep -oE "nonce-[A-Za-z0-9+/=]+" | head -1 | sed 's/^nonce-//')
+if [ -n "$csp_nonce2" ] && [ "$csp_nonce" != "$csp_nonce2" ]; then
+  ok "CSP nonce is per-request (rotates)"
+else
+  bad "CSP nonce not rotating ('$csp_nonce' vs '$csp_nonce2')"
+fi
+
 # 8. Rate limiting on hostname-lookup (5/60) -> a 429 shows within 7 shared-session hits
 jar=$(mktemp); saw429=0
 for _ in $(seq 1 7); do

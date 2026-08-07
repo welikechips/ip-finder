@@ -21,11 +21,17 @@ if (!isset($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 
+// Per-request CSP nonce — freshly minted every response and kept SEPARATE from the CSRF
+// token. A nonce's whole job is to be unguessable per response; reusing the session-static,
+// DOM-embedded CSRF value for it defeats that. This is never stored or echoed into a form
+// field — only into the CSP header and the matching <script nonce> tags below.
+$cspNonce = base64_encode(random_bytes(16));
+
 // Set secure headers with more permissive CSP that still maintains security.
 // connect-src is built from the single source of truth in utils.php (externalServiceOrigins)
 // so it can't drift from the server-side lookup list; plus 'self' and the WebRTC STUN server.
 $cspConnectSrc = implode(' ', array_merge(["'self'"], externalServiceOrigins(), ['stun:stun.l.google.com:19302']));
-header("Content-Security-Policy: default-src 'self'; connect-src " . $cspConnectSrc . "; script-src 'self' 'nonce-" . htmlspecialchars($_SESSION['csrf_token']) . "'; style-src 'self'; frame-src https://api.ipify.org; img-src 'self' data:;");
+header("Content-Security-Policy: default-src 'self'; connect-src " . $cspConnectSrc . "; script-src 'self' 'nonce-" . $cspNonce . "'; style-src 'self'; frame-src https://api.ipify.org; img-src 'self' data:;");
 header("X-Frame-Options: DENY");
 header("X-Content-Type-Options: nosniff");
 header("Referrer-Policy: strict-origin-when-cross-origin");
@@ -125,7 +131,7 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
     <title>Just the tIP</title>
     <link rel="stylesheet" href="public/css/styles.css">
     <link rel="icon" href="data:,">
-    <script nonce="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+    <script nonce="<?php echo htmlspecialchars($cspNonce); ?>">
         // Apply a saved theme override before first paint to avoid a flash. Client-only.
         (function () {
             try {
@@ -289,6 +295,6 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
 </div>
 
 <!-- External JavaScript file with enhanced security -->
-<script nonce="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>" src="public/js/ip-finder.js"></script>
+<script nonce="<?php echo htmlspecialchars($cspNonce); ?>" src="public/js/ip-finder.js"></script>
 </body>
 </html>
