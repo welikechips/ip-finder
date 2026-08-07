@@ -29,9 +29,6 @@ COPY utils.php /var/www/html/
 COPY public/css/styles.css /var/www/html/public/css/
 COPY public/js/ip-finder.js /var/www/html/public/js/
 
-# Create a symlink for backward compatibility
-RUN ln -sf /var/www/html/index.php /var/www/html/whats-my-ip.php
-
 # Copy Python application
 COPY tor_check.py /usr/local/bin/
 RUN chmod +x /usr/local/bin/tor_check.py

@@ -108,11 +108,6 @@ if ($wantsJson) {
     exit;
 }
 
-// We now report the client IP directly, so the old server-vs-client proxy
-// comparison no longer applies — no false "VPN detected" banner.
-$clientHostname = null;
-$usingProxy = false;
-
 // App version = the deployed git commit. Render injects RENDER_GIT_COMMIT at runtime;
 // GIT_COMMIT can be baked at build time; otherwise it's a local/dev build.
 $appCommit = getenv('RENDER_GIT_COMMIT') ?: getenv('GIT_COMMIT') ?: '';
@@ -191,22 +186,6 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
             <p class="note-text">Note: This is the IP address your connection presents to this server. Browser-based
                 proxies (e.g. FoxyProxy) may differ — see Browser Detection.</p>
         </div>
-
-        <!-- Proxy/VPN Detection -->
-        <?php if ($usingProxy): ?>
-            <div class="proxy-warning">
-                <strong>VPN/Proxy Detected:</strong> Your connection appears to be going through a proxy or VPN.
-                <div class="ip-row-noborder">
-                    <span class="ip-label">Direct Client IP:</span>
-                    <span class="ip-value"><?php echo htmlspecialchars($clientIP); ?></span>
-                </div>
-                <?php if ($clientHostname): ?>
-                    <div class="hostname">
-                        Hostname: <?php echo htmlspecialchars($clientHostname); ?>
-                    </div>
-                <?php endif; ?>
-            </div>
-        <?php endif; ?>
 
         <!-- Additional IP Information -->
         <?php if ($ipInfo): ?>
