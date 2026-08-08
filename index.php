@@ -27,11 +27,10 @@ if (!isset($_SESSION['csrf_token'])) {
 // field — only into the CSP header and the matching <script nonce> tags below.
 $cspNonce = base64_encode(random_bytes(16));
 
-// Set secure headers with more permissive CSP that still maintains security.
-// connect-src is built from the single source of truth in utils.php (externalServiceOrigins)
-// so it can't drift from the server-side lookup list; plus 'self' and the WebRTC STUN server.
-$cspConnectSrc = implode(' ', array_merge(["'self'"], externalServiceOrigins(), ['stun:stun.l.google.com:19302']));
-header("Content-Security-Policy: default-src 'self'; connect-src " . $cspConnectSrc . "; script-src 'self' 'nonce-" . $cspNonce . "'; style-src 'self'; frame-src https://api.ipify.org; img-src 'self' data:;");
+// Set secure headers. The browser only talks to our OWN origin (the page IP echo + the
+// hostname-lookup endpoint) and the WebRTC STUN server — no third-party fetch — so connect-src
+// is just 'self' + STUN, and there are no external frames.
+header("Content-Security-Policy: default-src 'self'; connect-src 'self' stun:stun.l.google.com:19302; script-src 'self' 'nonce-" . $cspNonce . "'; style-src 'self'; frame-src 'none'; img-src 'self' data:;");
 header("X-Frame-Options: DENY");
 header("X-Content-Type-Options: nosniff");
 header("Referrer-Policy: strict-origin-when-cross-origin");
@@ -260,15 +259,6 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
                 <p class="webrtc-title">WebRTC Leak Check</p>
                 <p class="note-text">WebRTC can expose IP addresses that bypass a VPN. This check runs entirely in your browser — nothing is sent to the server.</p>
                 <div id="webrtc-result" class="webrtc-result">Open this tab to run the check…</div>
-            </div>
-
-            <!-- External service iframe fallback with proper security attributes -->
-            <div class="alternative-method">
-                <p class="alternative-title">Alternative Method: External IP checker service</p>
-                <iframe src="https://api.ipify.org" id="ip-frame"
-                        class="external-iframe"
-                        sandbox="allow-scripts allow-same-origin"
-                        referrerpolicy="no-referrer"></iframe>
             </div>
         </div>
     </div>

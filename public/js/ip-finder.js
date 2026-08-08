@@ -259,162 +259,71 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (data && data.hostname) {
                     safeSetContent(hostnameElement, data.hostname);
                 } else {
-                    const italicText = document.createElement('i');
-                    italicText.textContent = 'No hostname found';
-                    while (hostnameElement.firstChild) {
-                        hostnameElement.removeChild(hostnameElement.firstChild);
-                    }
-                    hostnameElement.appendChild(italicText);
+                    replaceWithItalic(hostnameElement, 'No hostname found');
                 }
             })
             .catch(error => {
                 console.error('Error fetching hostname:', error);
-                const italicText = document.createElement('i');
-                italicText.textContent = 'Hostname lookup failed';
-                while (hostnameElement.firstChild) {
-                    hostnameElement.removeChild(hostnameElement.firstChild);
-                }
-                hostnameElement.appendChild(italicText);
+                replaceWithItalic(hostnameElement, 'Hostname lookup failed');
             });
     }
 
-    // Function to detect IP address using browser - enhanced security
+    // Detect the IP the browser's own request presents, by asking our SAME-ORIGIN endpoint,
+    // which echoes the IP it sees. No third-party service, no iframe. This is a live re-check:
+    // it can differ from Server Detection above if the network changed since the page loaded
+    // (e.g. a VPN/proxy toggled in the browser); the WebRTC check covers hidden/leaked IPs.
     function detectBrowserIP() {
         const ipElement = document.getElementById('browser-ip');
         const hostnameElement = document.getElementById('browser-hostname');
         const loadingElement = document.getElementById('loading');
         const resultElement = document.getElementById('browser-ip-result');
 
-        // Try to use the iframe first with improved security
-        try {
-            const ipFrame = document.getElementById('ip-frame');
+        const reveal = function () {
+            loadingElement.classList.add('hidden');
+            loadingElement.classList.remove('visible');
+            resultElement.classList.add('visible');
+            resultElement.classList.remove('hidden');
+        };
 
-            // Set up an event listener for when the iframe loads
-            ipFrame.onload = function() {
-                try {
-                    // For simple text response, safely get content
-                    const frameContent = ipFrame.contentDocument || ipFrame.contentWindow.document;
-                    // Use textContent which is safer against XSS
-                    const ipText = frameContent.body.textContent || frameContent.body.innerText;
-
-                    if (ipText && ipText.trim().length > 0) {
-                        // Validate IP format before displaying
-                        const ipPattern = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
-                        if (ipPattern.test(ipText.trim())) {
-                            // Safely set the content
-                            safeSetContent(ipElement, ipText.trim());
-
-                            // Now try to fetch hostname for this IP
-                            fetchHostname(ipText.trim());
-
-                            // Use CSS classes to show/hide elements
-                            loadingElement.classList.add('hidden');
-                            resultElement.classList.remove('hidden');
-                            return;
-                        }
-                    }
-                    // If we reach here, something went wrong with the iframe content
-                    fetchIPAddress();
-                } catch (e) {
-                    console.error('Error reading iframe content:', e);
-                    // Continue with fetch approach as fallback
-                    fetchIPAddress();
-                }
-            };
-
-            // Back up with fetch API if iframe doesn't work after a timeout
-            setTimeout(function() {
-                if (!loadingElement.classList.contains('hidden')) {
-                    fetchIPAddress();
-                }
-            }, 3000);
-        } catch (e) {
-            console.error('Error with iframe:', e);
-            fetchIPAddress();
-        }
-    }
-
-    // Enhanced fetchIPAddress with hostname lookup and security improvements
-    function fetchIPAddress() {
-        const ipElement = document.getElementById('browser-ip');
-        const hostnameElement = document.getElementById('browser-hostname');
-        const loadingElement = document.getElementById('loading');
-        const resultElement = document.getElementById('browser-ip-result');
-
-        // Try first API
-        fetch('https://api.ipify.org')
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Network response was not ok');
-                }
+        fetch('?format=text', {
+            method: 'GET',
+            headers: { 'Accept': 'text/plain', 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin',
+            cache: 'no-store'
+        })
+            .then(function (response) {
+                if (!response.ok) { throw new Error('Network response was not ok'); }
                 return response.text();
             })
-            .then(ip => {
-                // Validate IP format
-                const ipPattern = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
-                if (!ipPattern.test(ip.trim())) {
-                    throw new Error('Invalid IP format received');
-                }
-
-                // Safely set content
+            .then(function (text) {
+                const ip = (text || '').trim();
+                if (!isDisplayableIp(ip)) { throw new Error('Invalid IP received'); }
                 safeSetContent(ipElement, ip);
-
-                // Attempt to fetch hostname for the IP
                 fetchHostname(ip);
-
-                // Use CSS classes to show/hide elements
-                loadingElement.classList.add('hidden');
-                loadingElement.classList.remove('visible');
-                resultElement.classList.add('visible');
-                resultElement.classList.remove('hidden');
+                reveal();
             })
-            .catch(error => {
-                // Try another service as fallback
-                fetch('https://api.ipify.org?format=json')
-                    .then(response => {
-                        if (!response.ok) {
-                            throw new Error('Network response was not ok');
-                        }
-                        return response.json();
-                    })
-                    .then(data => {
-                        if (!data.ip || !/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(data.ip)) {
-                            throw new Error('Invalid IP format in JSON response');
-                        }
-
-                        // Safely set content
-                        safeSetContent(ipElement, data.ip);
-
-                        // Attempt to fetch hostname for the IP
-                        fetchHostname(data.ip);
-
-                        // Use CSS classes to show/hide elements
-                        loadingElement.classList.add('hidden');
-                        loadingElement.classList.remove('visible');
-                        resultElement.classList.add('visible');
-                        resultElement.classList.remove('hidden');
-                    })
-                    .catch(finalError => {
-                        console.error('All IP detection methods failed:', finalError);
-
-                        safeSetContent(ipElement, 'Detection failed');
-
-                        // Create an italic element for hostname message
-                        const italicText = document.createElement('i');
-                        italicText.textContent = 'Detection failed';
-
-                        // Clear existing content and append the new element
-                        while (hostnameElement.firstChild) {
-                            hostnameElement.removeChild(hostnameElement.firstChild);
-                        }
-                        hostnameElement.appendChild(italicText);
-
-                        // Use CSS classes to show/hide elements
-                        loadingElement.classList.add('hidden');
-                        loadingElement.classList.remove('visible');
-                        resultElement.classList.add('visible');
-                        resultElement.classList.remove('hidden');
-                    });
+            .catch(function (error) {
+                console.error('Browser IP detection failed:', error);
+                safeSetContent(ipElement, 'Detection failed');
+                replaceWithItalic(hostnameElement, 'Detection failed');
+                reveal();
             });
+    }
+
+    // Accept IPv4 (dotted) or IPv6 (hex + colons). The value already came validated from our own
+    // server, so this is a display sanity check, not the security boundary.
+    function isDisplayableIp(s) {
+        if (!s || s.length > 45) { return false; }
+        if (/^(\d{1,3}\.){3}\d{1,3}$/.test(s)) { return true; }
+        return s.indexOf(':') !== -1 && /^[0-9a-fA-F:]+$/.test(s);
+    }
+
+    // Replace an element's contents with a single italic message (textContent — no HTML injection).
+    function replaceWithItalic(el, message) {
+        if (!el) { return; }
+        while (el.firstChild) { el.removeChild(el.firstChild); }
+        const italic = document.createElement('i');
+        italic.textContent = message;
+        el.appendChild(italic);
     }
 });

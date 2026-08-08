@@ -23,7 +23,7 @@ PASS=0; FAIL=0
 ok()  { echo "  PASS  $1"; PASS=$((PASS + 1)); }
 bad() { echo "  FAIL  $1"; FAIL=$((FAIL + 1)); }
 
-cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }
+cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; rm -f "${IPCTR_FILE:-}" 2>/dev/null || true; }
 trap cleanup EXIT
 
 echo "==> Building image"
@@ -49,11 +49,16 @@ echo "==> HTTP endpoint checks"
 # checks below must present as a browser to receive the HTML.
 UA_HTML="Mozilla/5.0 (test-suite)"
 
-# Rate limiting now keys on the visitor IP, so give each independent page-load check a
-# distinct client IP (RFC 5737 TEST-NET-2) — the suite models many visitors, not one client
-# hammering the server (which per-IP limiting would correctly start returning 429 for).
-IPCTR=0
-GET() { IPCTR=$((IPCTR + 1)); curl -s -A "$UA_HTML" -H "True-Client-IP: 198.51.100.$IPCTR" "$@"; }
+# Rate limiting keys on the visitor IP, so give each independent page-load check a distinct
+# client IP (RFC 5737 TEST-NET-2) — the suite models many visitors, not one client hammering the
+# server (which per-IP limiting would correctly start 429-ing). GET runs in subshells (command
+# substitution / pipelines), so the counter lives in a temp file to survive them; a plain shell
+# variable would reset every call and pin every request to a single IP.
+IPCTR_FILE="$(mktemp)"; echo 0 > "$IPCTR_FILE"
+GET() {
+  local n; n=$(( $(cat "$IPCTR_FILE") + 1 )); echo "$n" > "$IPCTR_FILE"
+  curl -s -A "$UA_HTML" -H "True-Client-IP: 198.51.100.$n" "$@"
+}
 
 # 1. Home page serves
 code=$(GET -o /dev/null -w '%{http_code}' "$BASE/")
@@ -78,6 +83,14 @@ GET "$BASE/" | grep -q 'class="copy-btn"' && ok "copy-IP button present" || bad 
 # 1f. WebRTC leak-check section present + CSP allows the STUN server
 GET "$BASE/" | grep -q 'id="webrtc-result"' && ok "WebRTC leak-check section present" || bad "WebRTC section missing"
 GET -D - -o /dev/null "$BASE/" | grep -qi 'stun:stun.l.google.com' && ok "CSP allows STUN for WebRTC" || bad "CSP missing STUN source"
+
+# 1g. Browser detection is first-party now: api.ipify.org is gone from the page AND the CSP, and
+#     there are no external frames.
+pg=$(GET "$BASE/")
+echo "$pg" | grep -qi 'api.ipify.org' && bad "ipify still referenced in page HTML" || ok "no ipify in page (first-party browser detection)"
+hdr=$(GET -D - -o /dev/null "$BASE/" | grep -i 'content-security-policy')
+echo "$hdr" | grep -qi 'api.ipify.org' && bad "ipify still allowed by CSP" || ok "CSP no longer allows ipify"
+echo "$hdr" | grep -qi "frame-src 'none'" && ok "CSP frame-src locked to 'none'" || bad "frame-src not 'none'"
 
 # 2. True-Client-IP is reported as the visitor IP (on the HTML page)
 curl -s -A "$UA_HTML" -H "True-Client-IP: 1.1.1.1" "$BASE/" | grep -q "1.1.1.1" \
