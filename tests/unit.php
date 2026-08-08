@@ -162,5 +162,46 @@ is_eq(externalServiceOrigins(),
       ['https://api.ipify.org', 'https://ipinfo.io', 'https://api.ip.sb', 'https://api.myip.com'],
       'origins derived as scheme://host, deduped, in order');
 
+echo "normalizeMaxmind (GeoLite2 record -> ipinfo field shape)\n";
+$mmCity = [
+    'city'         => ['names' => ['en' => 'Linkoping']],
+    'country'      => ['iso_code' => 'SE', 'names' => ['en' => 'Sweden']],
+    'location'     => ['time_zone' => 'Europe/Stockholm'],
+    'subdivisions' => [['iso_code' => 'E', 'names' => ['en' => 'Ostergotland County']]],
+];
+$mmAsn = ['autonomous_system_number' => 29518, 'autonomous_system_organization' => 'Bredband2 AB'];
+$mm = normalizeMaxmind($mmCity, $mmAsn, '89.160.20.112');
+is_eq($mm['city'], 'Linkoping',                'city from City record');
+is_eq($mm['region'], 'Ostergotland County',    'region from subdivision name');
+is_eq($mm['country'], 'SE',                    'country from iso_code');
+is_eq($mm['org'], 'AS29518 Bredband2 AB',      'org built AS<num> <org> (ipinfo style)');
+is_eq($mm['timezone'], 'Europe/Stockholm',     'timezone from location.time_zone');
+is_eq($mm['ip'], '89.160.20.112',              'ip passed through');
+is_eq(normalizeMaxmind(['subdivisions' => [['iso_code' => 'CA']], 'city' => ['names' => ['en' => 'X']], 'country' => ['iso_code' => 'US']], null, '1.2.3.4')['region'],
+      'CA',                                    'region falls back to subdivision iso_code');
+is_eq(normalizeMaxmind(null, ['autonomous_system_number' => 1221, 'autonomous_system_organization' => 'Telstra Pty Ltd'], '1.128.0.0')['org'],
+      'AS1221 Telstra Pty Ltd',                'ASN-only record -> org built');
+is_eq(normalizeMaxmind(null, ['autonomous_system_organization' => 'SoloOrg'])['org'],
+      'SoloOrg',                               'org without ASN number -> org name alone');
+check(normalizeMaxmind(null, null) === null,   'no city + no asn -> null');
+check(normalizeMaxmind([], []) === null,       'empty records -> null');
+check(normalizeMaxmind('x', 'y') === null,     'non-array records -> null');
+
+echo "geoLookupLocal (real maxminddb reader against bundled test fixtures)\n";
+if (class_exists('MaxMind\\Db\\Reader')) {
+    putenv('GEOIP_DB_DIR=' . __DIR__ . '/fixtures/geoip');
+    $swe = geoLookupLocal('89.160.20.112');   // present in BOTH City + ASN test fixtures
+    is_eq($swe['city'], "Link\u{f6}ping",                  'fixture: city from City DB');
+    is_eq($swe['region'], "\u{d6}sterg\u{f6}tland County", 'fixture: region from City DB');
+    is_eq($swe['country'], 'SE',                           'fixture: country iso_code');
+    is_eq($swe['org'], 'AS29518 Bredband2 AB',             'fixture: org merged from ASN DB');
+    is_eq($swe['timezone'], 'Europe/Stockholm',            'fixture: timezone from City DB');
+    is_eq(geoLookupLocal('2.125.160.216')['city'], 'Boxford',            'fixture: city-only IP resolves city');
+    is_eq(geoLookupLocal('1.128.0.0')['org'], 'AS1221 Telstra Pty Ltd',  'fixture: ASN-only IP resolves org');
+    check(geoLookupLocal('203.0.113.1') === null,          'fixture: IP absent from both DBs -> null (fallback trigger)');
+} else {
+    echo "  SKIP  maxminddb extension not loaded (fixture reader needs the built image)\n";
+}
+
 echo "\n" . $GLOBALS['__tests'] . " checks, " . $GLOBALS['__fails'] . " failed\n";
 exit($GLOBALS['__fails'] > 0 ? 1 : 0);

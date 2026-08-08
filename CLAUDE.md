@@ -39,9 +39,13 @@ selector.
 - Free-tier caveat: the service cold-starts (~30–60s) after 15 min idle.
 - The page footer shows the deployed commit SHA, read from `RENDER_GIT_COMMIT` (runtime) or the `GIT_COMMIT` build arg;
   local builds show `dev`. `tests/integration.sh` builds with `--build-arg GIT_COMMIT` and asserts it renders.
-- Geolocation (`getIPInfo` in `utils.php`) uses ipinfo.io primary + ipwho.is fallback. ipinfo's token-less tier is
-  throttled from Render's datacenter egress (that's why the location block can vanish), so set an `IPINFO_TOKEN` env var
-  in Render for reliable ipinfo; the ipwho.is fallback covers the zero-config case. Timestamps render in
+- Geolocation (`getIPInfo` in `utils.php`) resolves **locally first** from MaxMind GeoLite2 (City + ASN) via the
+  `maxminddb` PHP extension — zero third-party calls in the request path. The `.mmdb` files are baked into the image at
+  build time when `MAXMIND_LICENSE_KEY` is set (Render passes service env vars as Docker build args; without a key the
+  bake is skipped). `GEOIP_DB_DIR` (default `/usr/share/GeoIP`) locates the DBs. When the local DBs aren't present it
+  falls back to ipinfo.io (set `IPINFO_TOKEN` for reliable datacenter-egress use) then token-free ipwho.is, so keyless
+  builds still resolve. Refresh the DBs by rebuilding (push-to-main) or a monthly job. `tests/fixtures/geoip/` holds
+  MaxMind's small Apache-licensed test DBs so CI exercises the real reader without a license key. Timestamps render in
   `America/New_York` (EDT/EST), a fixed default since VPNs make IP-based timezone unreliable.
 
 ## Architecture
