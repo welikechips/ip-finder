@@ -157,11 +157,6 @@ check(ipInList('203.0.113.50', "203.0.113.5\n") === false, 'no partial-line matc
 check(ipInList('not-an-ip', $torSample) === false,         'invalid IP -> false');
 check(ipInList('203.0.113.5', '') === false,               'empty list -> false');
 
-echo "externalServiceOrigins (CSP single-source)\n";
-is_eq(externalServiceOrigins(),
-      ['https://api.ipify.org', 'https://ipinfo.io', 'https://api.ip.sb', 'https://api.myip.com'],
-      'origins derived as scheme://host, deduped, in order');
-
 echo "normalizeMaxmind (GeoLite2 record -> ipinfo field shape)\n";
 $mmCity = [
     'city'         => ['names' => ['en' => 'Linkoping']],

@@ -62,9 +62,9 @@ function getClientIP() {
     return validateIP($remoteAddr) ? $remoteAddr : '0.0.0.0';
 }
 
-// Single source of truth for the external IP-lookup services. getExternalIP() curls
-// these full URLs; externalServiceOrigins() derives the scheme://host list the browser
-// CSP connect-src is built from — add a service here and both stay in sync.
+// Server-side fallback list for getExternalIP() — used only when the client IP isn't public
+// (e.g. local dev with no proxy in front). The browser never reaches these, so they don't
+// drive the CSP.
 function externalIPServices() {
     return [
         'https://api.ipify.org?format=json',
@@ -72,19 +72,6 @@ function externalIPServices() {
         'https://api.ip.sb/jsonip',
         'https://api.myip.com',
     ];
-}
-
-// Deduplicated scheme://host origins of externalIPServices(), order preserved. Feeds the
-// CSP connect-src in index.php so it can't drift from the server-side lookup list.
-function externalServiceOrigins() {
-    $origins = [];
-    foreach (externalIPServices() as $url) {
-        $u = parse_url($url);
-        if (isset($u['scheme'], $u['host'])) {
-            $origins[$u['scheme'] . '://' . $u['host']] = true;
-        }
-    }
-    return array_keys($origins);
 }
 
 // Function to get the external IP address from API services

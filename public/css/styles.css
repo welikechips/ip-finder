@@ -26,7 +26,6 @@
     --client-border: #2196f3;
     --warning-bg: #fff3cd;
     --warning-border: #ffc107;
-    --iframe-bg: #f9f9f9;
     --error: #e74c3c;
     --spinner-track: rgba(0, 0, 0, 0.1);
     --shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
@@ -53,7 +52,6 @@
         --client-bg: #12263a;
         --client-border: #2196f3;
         --warning-bg: #332d00;
-        --iframe-bg: #f0f0f0; /* stays light in dark mode: the iframe hosts third-party content that renders dark text */
         --error: #ff6b5e;
         --spinner-track: rgba(255, 255, 255, 0.12);
         --shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
@@ -80,7 +78,6 @@
     --client-bg: #12263a;
     --client-border: #2196f3;
     --warning-bg: #332d00;
-    --iframe-bg: #f0f0f0; /* stays light in dark mode: the iframe hosts third-party content that renders dark text */
     --error: #ff6b5e;
     --spinner-track: rgba(255, 255, 255, 0.12);
     --shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
@@ -375,22 +372,6 @@ h2 {
 
 .tab-content.active {
     display: block;
-}
-
-.external-iframe {
-    width: 100%;
-    height: 150px;
-    border: 1px solid var(--border-2);
-    border-radius: 4px;
-    background-color: var(--iframe-bg);
-}
-
-.alternative-method {
-    margin-top: 20px;
-}
-
-.alternative-title {
-    font-weight: bold;
 }
 
 /* Display utility classes */
