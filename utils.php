@@ -153,16 +153,88 @@ function normalizeIpwhois($who) {
     ];
 }
 
-// Get geolocation for an IP. Primary provider is ipinfo.io — authenticate it with an
-// IPINFO_TOKEN env var for reliable use from datacenter IPs (our Render host gets its
-// token-less requests limited). Falls back to ipwho.is (token-free) so the location
-// still resolves with zero config.
+// Normalize MaxMind GeoLite2 records (City + ASN) into the same field shape ipinfo.io returns
+// (city / region / country / org / timezone). Pure — no I/O — so it's unit-testable against
+// synthetic records. Returns null when neither DB had anything for the IP.
+function normalizeMaxmind($city, $asn, $ip = null) {
+    $hasCity = is_array($city) && !empty($city);
+    $hasAsn  = is_array($asn) && !empty($asn);
+    if (!$hasCity && !$hasAsn) {
+        return null;
+    }
+
+    // org, built to match ipinfo's "AS15169 Google LLC" style.
+    $org = null;
+    if ($hasAsn && isset($asn['autonomous_system_number'], $asn['autonomous_system_organization'])) {
+        $org = 'AS' . $asn['autonomous_system_number'] . ' ' . $asn['autonomous_system_organization'];
+    } elseif ($hasAsn && isset($asn['autonomous_system_organization'])) {
+        $org = $asn['autonomous_system_organization'];
+    }
+
+    // region: most-specific subdivision, full name preferred over ISO code.
+    $region = null;
+    if ($hasCity && isset($city['subdivisions'][0]['names']['en'])) {
+        $region = $city['subdivisions'][0]['names']['en'];
+    } elseif ($hasCity && isset($city['subdivisions'][0]['iso_code'])) {
+        $region = $city['subdivisions'][0]['iso_code'];
+    }
+
+    return [
+        'ip'       => $ip,
+        'city'     => ($hasCity && isset($city['city']['names']['en'])) ? $city['city']['names']['en'] : null,
+        'region'   => $region,
+        'country'  => ($hasCity && isset($city['country']['iso_code'])) ? $city['country']['iso_code'] : null,
+        'org'      => $org,
+        'timezone' => ($hasCity && isset($city['location']['time_zone'])) ? $city['location']['time_zone'] : null,
+    ];
+}
+
+// Look up an IP in the local MaxMind GeoLite2 City + ASN databases. Returns the normalized field
+// shape, or null when the maxminddb extension or the .mmdb files aren't present (which is how
+// getIPInfo() knows to fall back to the HTTP providers). Reads GEOIP_DB_DIR (default
+// /usr/share/GeoIP). Entirely local — no visitor data leaves the box.
+// Read one IP's record from an .mmdb file via the maxminddb extension. Null if the file is
+// absent; caller handles a thrown InvalidDatabaseException.
+function readMmdbRecord($file, $ip) {
+    if (!is_file($file)) {
+        return null;
+    }
+    $reader = new MaxMind\Db\Reader($file);
+    $record = $reader->get($ip);
+    $reader->close();
+    return $record;
+}
+
+function geoLookupLocal($ip) {
+    if (!class_exists('MaxMind\\Db\\Reader')) {
+        return null;
+    }
+    $dir = getenv('GEOIP_DB_DIR') ?: '/usr/share/GeoIP';
+    try {
+        $city = readMmdbRecord($dir . '/GeoLite2-City.mmdb', $ip);
+        $asn  = readMmdbRecord($dir . '/GeoLite2-ASN.mmdb', $ip);
+    } catch (\Throwable $e) {
+        return null; // corrupt/unsupported DB -> fall back rather than 500
+    }
+    return normalizeMaxmind($city, $asn, $ip);
+}
+
+// Get geolocation for an IP. Primary is the LOCAL MaxMind GeoLite2 databases (zero third-party
+// calls); when those aren't present it falls back to ipinfo.io (authenticate with IPINFO_TOKEN
+// for reliable datacenter-egress use) and then token-free ipwho.is, so keyless / DB-less setups
+// still resolve with zero config.
 function getIPInfo($ip) {
     if (!filter_var($ip, FILTER_VALIDATE_IP)) {
         return null;
     }
 
-    // Primary: ipinfo.io. A limited/blocked response omits 'city', so require it.
+    // Primary: local GeoLite2 lookup — no network, no third party.
+    $local = geoLookupLocal($ip);
+    if ($local !== null) {
+        return $local;
+    }
+
+    // Fallback 1: ipinfo.io. A limited/blocked response omits 'city', so require it.
     $token = getenv('IPINFO_TOKEN');
     $ipinfoUrl = "https://ipinfo.io/{$ip}/json" . ($token ? '?token=' . urlencode($token) : '');
     $data = httpGetJson($ipinfoUrl);
@@ -170,7 +242,7 @@ function getIPInfo($ip) {
         return $data;
     }
 
-    // Fallback: ipwho.is, normalized to ipinfo's field shape.
+    // Fallback 2: ipwho.is, normalized to ipinfo's field shape.
     return normalizeIpwhois(httpGetJson("https://ipwho.is/{$ip}"));
 }
 

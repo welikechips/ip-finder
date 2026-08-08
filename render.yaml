@@ -11,8 +11,14 @@ services:
     healthCheckPath: /
     autoDeploy: true          # redeploy on every push to the default branch
     envVars:
-      # Optional: authenticates ipinfo.io for reliable geolocation from Render's
-      # datacenter egress. sync: false = the value is set in the Render dashboard,
-      # never committed here. Without it, getIPInfo() falls back to ipwho.is.
+      # Primary geolocation source: MaxMind GeoLite2. Render exposes service env vars as Docker
+      # build args, so this key lets the Dockerfile bake the City + ASN .mmdb into the image at
+      # build time (no runtime download). sync: false = set it in the Render dashboard, never here.
+      # Without it, the DB bake is skipped and getIPInfo() falls back to the HTTP providers below.
+      - key: MAXMIND_LICENSE_KEY
+        sync: false
+      # Fallback only (used when the local GeoLite2 DBs aren't baked): authenticates ipinfo.io for
+      # reliable geolocation from Render's datacenter egress. Without it, getIPInfo() falls back to
+      # ipwho.is. sync: false = the value is set in the Render dashboard, never committed here.
       - key: IPINFO_TOKEN
         sync: false

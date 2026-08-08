@@ -16,6 +16,32 @@ RUN apt-get update && apt-get install -y \
     libcurl4-openssl-dev \
     && docker-php-ext-install curl
 
+# GeoIP: libmaxminddb + the maxminddb PECL extension (registers MaxMind\Db\Reader, no Composer).
+# This is what lets getIPInfo() resolve city/ASN from a local .mmdb instead of a third-party API.
+RUN apt-get update && apt-get install -y $PHPIZE_DEPS libmaxminddb-dev \
+    && pecl install maxminddb \
+    && docker-php-ext-enable maxminddb \
+    && rm -rf /var/lib/apt/lists/*
+
+# GeoLite2 City + ASN databases, baked in at build time WHEN a MaxMind license key is provided
+# (docker build --build-arg MAXMIND_LICENSE_KEY=...). Without a key this step is skipped and
+# getIPInfo() falls back to its HTTP providers, so keyless builds (CI, local) still work. A
+# build-arg is visible in `docker history`; for a public image pass the key via a BuildKit secret
+# instead. Refresh by rebuilding (push-to-main redeploys) or a monthly job.
+ARG MAXMIND_LICENSE_KEY=""
+ENV GEOIP_DB_DIR=/usr/share/GeoIP
+RUN if [ -n "$MAXMIND_LICENSE_KEY" ]; then \
+        mkdir -p "$GEOIP_DB_DIR" && \
+        for ed in GeoLite2-City GeoLite2-ASN; do \
+            curl -fsSL "https://download.maxmind.com/app/geoip_download?edition_id=${ed}&license_key=${MAXMIND_LICENSE_KEY}&suffix=tar.gz" \
+                | tar -xz -C /tmp && \
+            find /tmp -name "${ed}.mmdb" -exec mv {} "$GEOIP_DB_DIR/" \; && \
+            rm -rf /tmp/${ed}_* ; \
+        done && ls -la "$GEOIP_DB_DIR" ; \
+    else \
+        echo "MAXMIND_LICENSE_KEY not set — skipping GeoIP DB bake; getIPInfo() uses the HTTP fallback." ; \
+    fi
+
 # Set working directory
 WORKDIR /var/www/html
 
