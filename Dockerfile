@@ -42,6 +42,15 @@ RUN if [ -n "$MAXMIND_LICENSE_KEY" ]; then \
         echo "MAXMIND_LICENSE_KEY not set — skipping GeoIP DB bake; getIPInfo() uses the HTTP fallback." ; \
     fi
 
+# Bundle the Tor Project exit list at build so isTorExit() checks it locally — no runtime fetch,
+# works offline. It's a PUBLIC list and the visitor IP is never sent; membership is tested
+# locally. Best-effort: a failed download does NOT fail the build (isTorExit falls back to a
+# runtime fetch). Refreshed on every deploy (push-to-main rebuilds).
+RUN mkdir -p /usr/share/tor \
+ && (curl -fsSL https://check.torproject.org/torbulkexitlist -o /usr/share/tor/torbulkexitlist \
+     || echo "Tor exit list download failed at build; isTorExit() will fetch at runtime.")
+ENV TOR_EXIT_LIST=/usr/share/tor/torbulkexitlist
+
 # Set working directory
 WORKDIR /var/www/html
 

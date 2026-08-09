@@ -289,13 +289,25 @@ function ipInList($ip, $listText) {
     return preg_match('/^' . preg_quote($ip, '/') . '\s*$/m', $listText) === 1;
 }
 
-// Is the IP a known Tor exit node? Uses the Tor Project bulk exit list, cached locally for
-// an hour. Privacy note: this fetches the PUBLIC list and checks membership locally — the
-// visitor's IP is never sent anywhere.
+// Is the IP a known Tor exit node? Checks membership against the Tor Project bulk exit list.
+// The list is a PUBLIC document baked into the image at build (TOR_EXIT_LIST, default
+// /usr/share/tor/torbulkexitlist), so the common path does ZERO runtime fetch and works
+// offline. Only when no baked list is present does it fetch the public list at runtime (cached
+// hourly). Either way the visitor's IP is never sent anywhere — membership is tested locally.
 function isTorExit($ip) {
     if (!filter_var($ip, FILTER_VALIDATE_IP)) {
         return false;
     }
+
+    // Preferred: the list baked into the image at build — local, no network.
+    $bundled = getenv('TOR_EXIT_LIST') ?: '/usr/share/tor/torbulkexitlist';
+    if (is_file($bundled)) {
+        $list = @file_get_contents($bundled);
+        return $list !== false && ipInList($ip, $list);
+    }
+
+    // Fallback (no baked list, e.g. a build where the download was skipped): fetch the public
+    // list at runtime, cached hourly.
     $cacheFile = sys_get_temp_dir() . '/tor_exit_list.txt';
     if (!is_file($cacheFile) || (time() - @filemtime($cacheFile)) > 3600) {
         $list = httpGetRaw('https://check.torproject.org/torbulkexitlist');
@@ -326,7 +338,8 @@ function getIPFlags($ip, $ipInfo) {
     return $flags;
 }
 
-// Enhanced function to get hostname from IP with multiple methods
+// Resolve an IP's hostname using the SYSTEM resolver only — no third-party HTTP call:
+// gethostbyaddr, then an explicit PTR record lookup, then an AWS EC2 forward-confirm heuristic.
 function resolveHostname($ip) {
     // Validate IP format first
     if (!validateIP($ip)) {
@@ -356,16 +369,8 @@ function resolveHostname($ip) {
         // Silent fail, continue to next method
     }
 
-    // Method 3: external API as last resort — HTTPS-hardened via the shared helper
-    // (ipinfo.io is good at hostname lookups).
-    $data = httpGetJson("https://ipinfo.io/{$ip}/json", 3);
-    if (is_array($data) && isset($data['hostname'])) {
-        return $data['hostname'];
-    }
-
-    // Last attempt - try to specifically handle AWS EC2 instances
-    // AWS EC2 hostnames often follow the pattern: ec2-IP-ADDRESS.compute-X.amazonaws.com
-    // where IP-ADDRESS has dashes instead of dots
+    // Method 3: AWS EC2 hostnames often follow ec2-IP-ADDRESS.compute-X.amazonaws.com (dashes
+    // instead of dots); forward-resolve the guess and confirm it maps back to the IP.
     if (strpos($ip, '.compute-') === false) { // Avoid infinite recursion
         $dashIP = str_replace('.', '-', $ip);
         $possibleEC2Hostname = "ec2-{$dashIP}.compute-1.amazonaws.com";
