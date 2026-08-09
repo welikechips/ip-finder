@@ -157,6 +157,14 @@ check(ipInList('203.0.113.50', "203.0.113.5\n") === false, 'no partial-line matc
 check(ipInList('not-an-ip', $torSample) === false,         'invalid IP -> false');
 check(ipInList('203.0.113.5', '') === false,               'empty list -> false');
 
+echo "isTorExit (local bundled list, offline)\n";
+putenv('TOR_EXIT_LIST=' . __DIR__ . '/fixtures/tor/torbulkexitlist');
+check(isTorExit('203.0.113.5') === true,   'IP present in bundled list -> tor exit');
+check(isTorExit('198.51.100.10') === true, 'second listed IP -> tor exit');
+check(isTorExit('8.8.8.8') === false,      'IP absent from bundled list -> not tor exit');
+check(isTorExit('not-an-ip') === false,    'invalid IP -> false');
+putenv('TOR_EXIT_LIST');
+
 echo "normalizeMaxmind (GeoLite2 record -> ipinfo field shape)\n";
 $mmCity = [
     'city'         => ['names' => ['en' => 'Linkoping']],
