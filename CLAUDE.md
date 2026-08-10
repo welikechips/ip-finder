@@ -44,8 +44,10 @@ selector.
   build time when `MAXMIND_LICENSE_KEY` is set (Render passes service env vars as Docker build args; without a key the
   bake is skipped). `GEOIP_DB_DIR` (default `/usr/share/GeoIP`) locates the DBs. When the local DBs aren't present it
   falls back to ipinfo.io (set `IPINFO_TOKEN` for reliable datacenter-egress use) then token-free ipwho.is, so keyless
-  builds still resolve. Refresh the DBs by rebuilding (push-to-main) or a monthly job. `tests/fixtures/geoip/` holds
-  MaxMind's small Apache-licensed test DBs so CI exercises the real reader without a license key. Timestamps render in
+  builds still resolve. The DBs (and the build-baked Tor exit list) refresh only on deploy, so
+  `.github/workflows/refresh-deploy.yml` triggers a weekly cache-cleared Render rebuild to keep them current (needs
+  `RENDER_API_KEY` + `RENDER_SERVICE_ID` repo secrets; no-ops if unset). `tests/fixtures/geoip/` holds MaxMind's small
+  Apache-licensed test DBs so CI exercises the real reader without a license key. Timestamps render in
   `America/New_York` (EDT/EST), a fixed default since VPNs make IP-based timezone unreliable.
 
 ## Architecture
@@ -55,13 +57,15 @@ Two independent IP-detection paths, surfaced as two tabs in the one page (`index
 1. **Server Detection** (default tab) — `index.php` calls `getClientIP()` (`utils.php`) and reports the visitor's real
    IP, then reverse-DNS + geolocation on it. If the client IP isn't public (e.g. local dev with no proxy), it falls back
    to `getExternalIP()`, a server-side curl to public IP APIs (ipify/ipinfo/ip.sb/myip).
-2. **Browser Detection** — `public/js/ip-finder.js` detects the IP client-side (ipify + an iframe fallback) and calls
-   the `hostname-lookup.php` JSON endpoint for reverse DNS. Useful when a browser-only proxy (e.g. FoxyProxy) differs
-   from the OS route.
+2. **Browser Detection** — `public/js/ip-finder.js` fetches the app's own same-origin `?format=text` echo endpoint (no
+   third-party service; the old ipify iframe/fetch was removed) and calls the `hostname-lookup.php` JSON endpoint for
+   reverse DNS. It's a live re-check that can diverge from Server Detection when the network changed after page load.
 
-`utils.php` holds the shared logic: IP validation, local-range detection, the external-IP/geolocation/hostname lookups (
-with layered fallbacks incl. a DNS PTR path and an EC2-hostname heuristic), and per-session rate limiting. `index.php`
-and `hostname-lookup.php` are the two entry points; both `require utils.php`.
+`utils.php` holds the shared logic: IP validation, local-range detection, **local MaxMind GeoLite2** geolocation
+(`geoLookupLocal`/`normalizeMaxmind`, HTTP fallback), **system-resolver** hostname lookup (`resolveHostname`: PTR + an
+EC2-hostname heuristic), the build-baked **Tor-exit** check (`isTorExit`), the VPN/datacenter heuristic, and **per-IP
+file-bucket rate limiting** (`enforceRateLimit`, a pure `rateLimitStep` + a `flock`'d temp-dir bucket). `index.php` and
+`hostname-lookup.php` are the two entry points; both `require utils.php`.
 
 ## Load-bearing detail: client IP behind Render's Cloudflare edge
 
@@ -84,12 +88,16 @@ private-range proxy trust. The logic lives in PHP instead. `tests/unit.php` lock
 
 ## Security posture
 
-`index.php` sets CSP + security headers and issues a CSRF token (validated on POST); both entry points apply per-session
-rate limits (`enforceRateLimit`). The app is only meant to run behind the Render/Cloudflare edge — that's what makes
-trusting the `*-Client-IP` headers safe.
+`index.php` sets a strict CSP (`connect-src 'self'` + the WebRTC STUN server, `frame-src 'none'`, and a **per-request
+script nonce distinct from the CSRF token**) plus the usual security headers (HSTS, `X-Frame-Options`, etc.), and issues
+a CSRF token (validated on POST). Both entry points apply **per-IP** rate limits (`enforceRateLimit` — a `flock`'d
+temp-dir file bucket keyed on the client IP, so dropping a cookie can't bypass it; fails open but `error_log`s the
+degrade). The app is only meant to run behind the Render/Cloudflare edge — that's what makes trusting the `*-Client-IP`
+headers safe.
 
 ## Note on `tor_check.py`
 
-Standalone diagnostic CLI baked into the image but never invoked by the web app. It imports `requests` (see
-`requirements.txt`), which the Dockerfile does **not** `pip install` — install it in the container before running if
-needed.
+Standalone diagnostic CLI baked into the image but never invoked by the web app. It runs on the Python **stdlib only**
+(`urllib`, `socket`, …) — no dependencies to install. (`requirements.txt` lists `requests`, but nothing imports it —
+it's vestigial.) The web app's own Tor-exit detection is separate: `isTorExit()` in `utils.php` against a build-baked
+list.
