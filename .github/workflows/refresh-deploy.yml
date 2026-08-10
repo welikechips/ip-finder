@@ -1,0 +1,54 @@
+name: Weekly refresh deploy
+
+# The MaxMind GeoLite2 databases (updated ~2x/week) and the Tor Project exit list (rotates
+# hourly) are baked into the image at BUILD time, so a rebuild is what refreshes them. Nothing
+# else redeploys the service on its own between pushes, so this runs a cache-cleared rebuild once
+# a week to keep that baked-in data current.
+#
+# It uses the Render API with `clearCache: clear` on purpose — a plain redeploy could hit a warm
+# build cache and reuse the stale download layers, which would defeat the point.
+#
+# One-time setup — add both as repository secrets (Settings -> Secrets and variables -> Actions):
+#   RENDER_API_KEY     Render dashboard -> Account Settings -> API Keys
+#   RENDER_SERVICE_ID  the service's "srv-..." id (in its dashboard URL, or via the Render API)
+# If either is unset the job logs a skip and exits green, so forks / pre-setup runs don't fail.
+
+on:
+  schedule:
+    - cron: '17 9 * * 1'   # Mondays 09:17 UTC (off the hour to dodge the scheduler rush)
+  workflow_dispatch: {}     # allow manual runs from the Actions tab
+
+permissions:
+  contents: read
+
+concurrency:
+  group: refresh-deploy
+  cancel-in-progress: false
+
+jobs:
+  redeploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger a cache-cleared Render deploy (refreshes baked GeoIP + Tor data)
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RENDER_API_KEY:-}" ] || [ -z "${RENDER_SERVICE_ID:-}" ]; then
+            echo "RENDER_API_KEY / RENDER_SERVICE_ID not set — skipping weekly refresh deploy."
+            echo "Set both as repo secrets to enable (see this workflow's header comment)."
+            exit 0
+          fi
+          code=$(curl -sS -o /tmp/render-resp.json -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{"clearCache":"clear"}' \
+            "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys")
+          echo "Render API responded HTTP ${code}"
+          cat /tmp/render-resp.json 2>/dev/null || true
+          echo
+          case "${code}" in
+            2*) echo "Cache-cleared deploy triggered — baked GeoIP + Tor data will refresh." ;;
+            *)  echo "::error::Render deploy request failed (HTTP ${code})"; exit 1 ;;
+          esac
