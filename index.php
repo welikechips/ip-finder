@@ -269,11 +269,31 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
         <button type="submit" class="refresh-btn">Refresh Information</button>
     </form>
 
+    <!-- Privacy: what this tool keeps (nothing) and where lookups happen (here). Every claim
+         below is backed by the code/deploy config — keep them honest if that ever changes. -->
+    <div class="privacy-info">
+        <h2>🔒 Your privacy</h2>
+        <p class="privacy-lede">This tool answers one question — what's your IP — then forgets you. Specifics:</p>
+        <ul class="privacy-list">
+            <li><strong>No database, no history.</strong> Your IP and every lookup are computed for this one page
+                view and never saved anywhere.</li>
+            <li><strong>No access logs.</strong> The web server's request logging is turned off, so your IP is
+                never written to a log file.</li>
+            <li><strong>No tracking.</strong> No analytics, ad networks, or third-party scripts — the
+                Content-Security-Policy blocks them. The only cookie is a session cookie used for CSRF protection.</li>
+            <li><strong>Rate-limiting keeps no raw IP.</strong> To curb abuse it holds a short-lived, hashed
+                request counter — never your actual address — and deletes it automatically.</li>
+            <li><strong>Lookups run here, not on a data broker.</strong> Geolocation reads a local database and the
+                Tor-exit check reads a bundled list, both baked into the app; reverse-DNS uses this server's own
+                resolver. The one exception: if the local geo database isn't installed, geolocation falls back to a
+                public API — the only time your IP is sent off this box.</li>
+            <li><strong>The WebRTC leak check stays in your browser.</strong> Nothing from that test is sent back
+                to the server.</li>
+        </ul>
+    </div>
+
     <div class="info-footer">
         <p>This tool shows your external IP address, hostname, and detects if you're using a VPN or proxy.</p>
-        <p class="privacy">🔒 Privacy — We don't log or store your IP, hostname, or lookups. No database, and access
-            logging is disabled. Your IP is only sent to third-party services to perform the lookup, never kept
-            here.</p>
         <p>Last updated: <?php echo date('Y-m-d H:i:s T'); ?></p>
         <p>Version:
             <?php if ($appCommit !== ''): ?>
