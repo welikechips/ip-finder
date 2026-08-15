@@ -277,8 +277,10 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
         <ul class="privacy-list">
             <li><strong>No database, no history.</strong> Your IP and every lookup are computed for this one page
                 view and never saved anywhere.</li>
-            <li><strong>No access logs.</strong> The web server's request logging is turned off, so your IP is
-                never written to a log file.</li>
+            <li><strong>This app keeps no access logs.</strong> Its own request logging is off — your IP isn't
+                written to a log file or database here. Honest caveat: the site sits behind a CDN and host
+                (Cloudflare + Render) that terminate the connection in front of the app, so that edge can see your
+                IP the way any host does — that layer is outside this app's control.</li>
             <li><strong>No tracking.</strong> No analytics, ad networks, or third-party scripts — the
                 Content-Security-Policy blocks them. The only cookie is a session cookie used for CSRF protection.</li>
             <li><strong>Rate-limiting keeps no raw IP.</strong> To curb abuse it holds a short-lived, hashed
