@@ -139,14 +139,19 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
     <link rel="stylesheet" href="public/css/styles.css">
     <link rel="icon" href="data:,">
     <script nonce="<?php echo htmlspecialchars($cspNonce); ?>">
-        // Apply a saved theme override before first paint to avoid a flash. Client-only.
+        // Dark is the default. Apply the theme before first paint to avoid a flash: a saved
+        // 'light' or 'auto' opts out; anything else (incl. no preference) stays dark. Client-only.
         (function () {
-            try {
-                const t = localStorage.getItem('theme');
-                if (t === 'light' || t === 'dark') {
-                    document.documentElement.setAttribute('data-theme', t);
-                }
-            } catch (e) {}
+            let t = null;
+            try { t = localStorage.getItem('theme'); } catch (e) {}
+            const el = document.documentElement;
+            if (t === 'light') {
+                el.setAttribute('data-theme', 'light');
+            } else if (t === 'auto') {
+                el.removeAttribute('data-theme'); // follow the OS
+            } else {
+                el.setAttribute('data-theme', 'dark'); // default (and explicit 'dark')
+            }
         })();
     </script>
 </head>

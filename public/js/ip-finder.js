@@ -23,7 +23,8 @@ document.addEventListener('DOMContentLoaded', function() {
         detectWebRTCLeak();
     });
 
-    // --- Theme switch: Auto -> Light -> Dark, persisted client-side in localStorage ---
+    // --- Theme switch: Dark (default) -> Light -> Auto, persisted client-side in localStorage.
+    //     Dark is the default: absent a stored preference, readMode() returns 'dark'. ---
     (function () {
         const btn = document.getElementById('theme-toggle');
         if (!btn) {
@@ -35,22 +36,24 @@ document.addEventListener('DOMContentLoaded', function() {
             try {
                 t = localStorage.getItem('theme');
             } catch (e) {}
-            return (t === 'light' || t === 'dark') ? t : 'auto';
+            // Dark is the default when nothing (or anything unrecognized) is stored.
+            return (t === 'light' || t === 'auto' || t === 'dark') ? t : 'dark';
         };
         const applyMode = function (mode) {
             if (mode === 'auto') {
-                document.documentElement.removeAttribute('data-theme');
-                try { localStorage.removeItem('theme'); } catch (e) {}
+                document.documentElement.removeAttribute('data-theme'); // follow the OS
             } else {
                 document.documentElement.setAttribute('data-theme', mode);
-                try { localStorage.setItem('theme', mode); } catch (e) {}
             }
+            // Persist every mode (incl. 'auto') so the choice sticks; with no value stored the
+            // default resolves to dark.
+            try { localStorage.setItem('theme', mode); } catch (e) {}
             btn.textContent = LABELS[mode];
             btn.setAttribute('title', 'Theme: ' + mode.charAt(0).toUpperCase() + mode.slice(1) + ' (click to change)');
         };
         applyMode(readMode());
         btn.addEventListener('click', function () {
-            const order = ['auto', 'light', 'dark'];
+            const order = ['dark', 'light', 'auto'];
             applyMode(order[(order.indexOf(readMode()) + 1) % order.length]);
         });
     })();
