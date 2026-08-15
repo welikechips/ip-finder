@@ -295,8 +295,40 @@ h2 {
     color: var(--text);
 }
 
+/* Tor exit is the loudest signal on the page — a filled onion-purple badge that glows and
+   pulses, so it's unmissable instead of a thin-bordered footnote. */
 .ip-flag-tor {
-    border-color: #9b59b6;
+    background-color: #9b59b6;
+    border-color: #8e44ad;
+    color: #ffffff;
+    font-size: 13px;
+    padding: 5px 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    box-shadow: 0 0 0 3px rgba(155, 89, 182, 0.25), 0 0 14px rgba(155, 89, 182, 0.65);
+    animation: tor-pulse 2.2s ease-in-out infinite;
+}
+
+.ip-flag-tor::before {
+    content: "🧅 ";
+}
+
+@keyframes tor-pulse {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(155, 89, 182, 0.22), 0 0 8px rgba(155, 89, 182, 0.45); }
+    50%      { box-shadow: 0 0 0 4px rgba(155, 89, 182, 0.34), 0 0 20px rgba(155, 89, 182, 0.85); }
+}
+
+/* When the visitor is on Tor, the whole "Your External IP" card lights up purple too. */
+.ip-info.tor-detected {
+    border-left-color: #9b59b6;
+    box-shadow: 0 0 0 1px rgba(155, 89, 182, 0.45), 0 0 22px rgba(155, 89, 182, 0.22);
+}
+
+/* Respect reduced-motion: keep the loud styling, drop only the pulse. */
+@media (prefers-reduced-motion: reduce) {
+    .ip-flag-tor {
+        animation: none;
+    }
 }
 
 .ip-flag-vpn {

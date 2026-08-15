@@ -102,6 +102,12 @@ ob_end_clean();
 // Anonymization flags for the IP (Tor exit / VPN / datacenter) — best-effort heuristics.
 $ipFlags = $externalIPData['success'] ? getIPFlags($externalIP, $ipInfo) : [];
 
+// Tor is the loudest signal — surface it at the card level too, not just the badge.
+$isTorExit = false;
+foreach ($ipFlags as $f) {
+    if (($f['type'] ?? '') === 'tor') { $isTorExit = true; break; }
+}
+
 // JSON for API clients (?format=json or Accept: application/json).
 if ($wantsJson) {
     header('Content-Type: application/json; charset=utf-8');
@@ -156,7 +162,7 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
 
     <!-- Server-side IP detection -->
     <div id="server-side" class="tab-content active">
-        <div class="ip-info">
+        <div class="ip-info<?php echo $isTorExit ? ' tor-detected' : ''; ?>">
             <h2>Your External IP (Server Detection)</h2>
 
             <?php if ($externalIPData['success']): ?>
