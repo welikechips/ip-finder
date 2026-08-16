@@ -8,6 +8,10 @@ A small PHP web app that shows a visitor their external IP, reverse-DNS hostname
 Shipped as a Docker image and deployed on **Render free tier** at **https://ip.jiveturkey.rocks**. The repo also carries
 `tor_check.py`, a standalone Python CLI (not part of the website).
 
+The same image can optionally publish the app over a **Tor v3 onion service** (off by default — see
+[Tor onion service](#tor-onion-service-optional)). The page defaults to a **dark theme** for fresh visitors, and the
+Tor-exit flag is rendered loud (a filled `🧅` badge + a purple card highlight) when detected.
+
 ## Commands
 
 Everything is wrapped in the `Makefile` — run `make` to list targets.
@@ -49,6 +53,10 @@ selector.
   `RENDER_API_KEY` + `RENDER_SERVICE_ID` repo secrets; no-ops if unset). `tests/fixtures/geoip/` holds MaxMind's small
   Apache-licensed test DBs so CI exercises the real reader without a license key. Timestamps render in
   `America/New_York` (EDT/EST), a fixed default since VPNs make IP-based timezone unreliable.
+- **Optional Tor onion service** (off by default): the image can also serve itself over a `.onion`. Its env vars
+  (`ENABLE_ONION`, `ONION_ADDRESS`, `ONION_KEY_B64`) live in `render.yaml`, and `.github/workflows/keepalive.yml` pings
+  the clearnet URL to keep the free-tier instance from spinning `tor` down. See
+  [Tor onion service](#tor-onion-service-optional) + `deploy/ONION.md`.
 
 ## Architecture
 
@@ -61,11 +69,15 @@ Two independent IP-detection paths, surfaced as two tabs in the one page (`index
    third-party service; the old ipify iframe/fetch was removed) and calls the `hostname-lookup.php` JSON endpoint for
    reverse DNS. It's a live re-check that can diverge from Server Detection when the network changed after page load.
 
+A **third render mode** kicks in when the request arrives over the Tor onion service (`isOnionHost()` sees a `.onion`
+`Host`): `index.php` skips all detection and renders a dedicated "nothing to show" panel — see
+[Tor onion service](#tor-onion-service-optional).
+
 `utils.php` holds the shared logic: IP validation, local-range detection, **local MaxMind GeoLite2** geolocation
 (`geoLookupLocal`/`normalizeMaxmind`, HTTP fallback), **system-resolver** hostname lookup (`resolveHostname`: PTR + an
-EC2-hostname heuristic), the build-baked **Tor-exit** check (`isTorExit`), the VPN/datacenter heuristic, and **per-IP
-file-bucket rate limiting** (`enforceRateLimit`, a pure `rateLimitStep` + a `flock`'d temp-dir bucket). `index.php` and
-`hostname-lookup.php` are the two entry points; both `require utils.php`.
+EC2-hostname heuristic), the build-baked **Tor-exit** check (`isTorExit`), the VPN/datacenter heuristic, the onion-host
+check (`isOnionHost`), and **per-IP file-bucket rate limiting** (`enforceRateLimit`, a pure `rateLimitStep` + a `flock`'d
+temp-dir bucket). `index.php` and `hostname-lookup.php` are the two entry points; both `require utils.php`.
 
 ## Load-bearing detail: client IP behind Render's Cloudflare edge
 
@@ -93,7 +105,34 @@ script nonce distinct from the CSRF token**) plus the usual security headers (HS
 a CSRF token (validated on POST). Both entry points apply **per-IP** rate limits (`enforceRateLimit` — a `flock`'d
 temp-dir file bucket keyed on the client IP, so dropping a cookie can't bypass it; fails open but `error_log`s the
 degrade). The app is only meant to run behind the Render/Cloudflare edge — that's what makes trusting the `*-Client-IP`
-headers safe.
+headers safe. **HSTS is sent on the clearnet host only** (it's meaningless over the TLS-less onion origin); the clearnet
+also emits an `Onion-Location` header advertising the onion when one is configured.
+
+## Tor onion service (optional)
+
+The same image can also publish the app over a **Tor v3 onion service**, co-located with Apache in the one container.
+It is **off by default** (`ENABLE_ONION=0`) and inert in CI/local — nothing changes on the clearnet site until it's
+enabled. Live onion when enabled: `jiveserzcd3zj6ptn3o3cr5l35pfibmw4vgzvkjjsvuwwuknnnptc6qd.onion`. **Full runbook:
+`deploy/ONION.md`.**
+
+- **Entrypoint** (`deploy/docker-entrypoint.sh`, gated on `ENABLE_ONION=1`) starts `tor` in the background (Apache stays
+  PID 1), installs the hidden-service key, and renders `deploy/torrc.template` with the live `$PORT`
+  (`HiddenServicePort 80 127.0.0.1:$PORT`). If `tor` dies the clearnet site keeps serving; the onion is down until the
+  next restart (no supervisor — a known limitation).
+- **Key** comes from EITHER `ONION_KEY_B64` (base64 env var — the portable path, since Render's Secret Files UI isn't
+  always discoverable) OR a mounted Secret File `hs_ed25519_secret_key`; the env var wins if both are set. The key IS the
+  address — **never commit it** (`sync: false` in `render.yaml`). Generate/vanity-grind offline with `mkp224o`.
+- **Onion-mode rendering** — `isOnionHost()` (`utils.php`) is true when the request `Host` ends in `.onion`. `index.php`
+  then SKIPS every lookup — over an onion there's no exit node / client IP, and it must **not** fall back to a
+  server-side lookup, which would leak the *server's* egress IP — and renders a dedicated "nothing to show — that's the
+  point" panel. HSTS is omitted; `Onion-Location` is not (that's a clearnet header).
+- **Env vars** (all in `render.yaml`): `ENABLE_ONION=1`, `ONION_ADDRESS=<addr>.onion`, and the key
+  (`ONION_KEY_B64` or a Secret File).
+- **Free-tier caveat (be honest about it):** Render free-tier idle spin-down kills `tor`, and nothing wakes it (onion
+  rendezvous never hits Render's HTTP edge), so `.github/workflows/keepalive.yml` (plus an external monitor such as
+  UptimeRobot) pings the clearnet URL to keep the instance warm. It's a keep-warm hack, not HA — for reliable uptime run
+  the same design on an always-on box. Tests: `isOnionHost` unit cases + integration checks (onion `Host` → panel, no
+  clearnet-UI leak, no HSTS over the onion, HSTS still on clearnet).
 
 ## Note on `tor_check.py`
 
