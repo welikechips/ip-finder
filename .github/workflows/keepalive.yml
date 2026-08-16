@@ -1,0 +1,21 @@
+name: keep-alive
+
+# Render free-tier spins the service down after ~15 min idle — which also kills the Tor onion
+# daemon, and NOTHING wakes it (onion traffic never hits Render's HTTP edge, so there's no inbound
+# request to trigger a wake). This scheduled ping keeps the instance warm so the onion stays up.
+#
+# HONEST CAVEAT: GitHub's cron drifts 5-15 min under load, which is loose against the 15-min idle
+# window. For a reliable onion, pair this with an external monitor (UptimeRobot free, 5-min) hitting
+# the same URL. See deploy/ONION.md. This whole thing is a keep-warm hack — it is not HA.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'   # best-effort; GitHub may delay scheduled runs
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the clearnet site to prevent idle spin-down
+        run: curl -fsS --max-time 30 -o /dev/null "https://ip.jiveturkey.rocks/?format=text" || true

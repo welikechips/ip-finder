@@ -51,6 +51,15 @@ RUN mkdir -p /usr/share/tor \
      || echo "Tor exit list download failed at build; isTorExit() will fetch at runtime.")
 ENV TOR_EXIT_LIST=/usr/share/tor/torbulkexitlist
 
+# --- Optional Tor ONION SERVICE (separate concern from the Tor-exit list above) ------------------
+# Install the tor daemon so the container CAN publish an onion service, but keep it INERT: the
+# entrypoint starts tor only when ENABLE_ONION=1 AND a hidden-service key is present. Over the
+# onion the app serves a dedicated "no IP to show" panel (see index.php / isOnionHost). Off by
+# default — nothing changes on the clearnet site. Full setup: deploy/ONION.md.
+RUN apt-get update && apt-get install -y tor && rm -rf /var/lib/apt/lists/*
+COPY deploy/torrc.template /etc/tor/torrc.template
+ENV ENABLE_ONION=0
+
 # Set working directory
 WORKDIR /var/www/html
 

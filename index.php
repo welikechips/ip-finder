@@ -27,6 +27,12 @@ if (!isset($_SESSION['csrf_token'])) {
 // field — only into the CSP header and the matching <script nonce> tags below.
 $cspNonce = base64_encode(random_bytes(16));
 
+// Are we being reached over our Tor onion service? tor sets Host to the <addr>.onion. Over an
+// onion there is NO exit node and NO client IP to resolve, so the request path below skips every
+// lookup and the page renders a dedicated panel. All of this is inert on the clearnet site.
+$requestHost = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
+$onionMode = isOnionHost($requestHost);
+
 // Set secure headers. The browser only talks to our OWN origin (the page IP echo + the
 // hostname-lookup endpoint) and the WebRTC STUN server — no third-party fetch — so connect-src
 // is just 'self' + STUN, and there are no external frames.
@@ -35,9 +41,17 @@ header("X-Frame-Options: DENY");
 header("X-Content-Type-Options: nosniff");
 header("Referrer-Policy: strict-origin-when-cross-origin");
 header("Permissions-Policy: geolocation=(), microphone=(), camera=()");
-// HSTS — the site is served HTTPS-only (Render/Cloudflare), so tell browsers to always use TLS.
-// Scoped to this host + its subdomains; no preload (hard to reverse).
-header("Strict-Transport-Security: max-age=63072000; includeSubDomains");
+// HSTS only on the clearnet host — it's meaningless (and wrong) over the onion, a different,
+// TLS-less origin. On the clearnet, also advertise the onion so Tor Browser auto-offers it.
+if (!$onionMode) {
+    // Served HTTPS-only (Render/Cloudflare) — tell browsers to always use TLS. Scoped to this
+    // host + subdomains; no preload (hard to reverse).
+    header("Strict-Transport-Security: max-age=63072000; includeSubDomains");
+    $onionAddr = getenv('ONION_ADDRESS');
+    if ($onionAddr) {
+        header('Onion-Location: http://' . $onionAddr);
+    }
+}
 
 // Resolve the visitor's IP once — used for per-IP rate limiting and the reported IP below.
 // Behind Render's Cloudflare edge, getClientIP() reads the real client IP from
@@ -69,6 +83,11 @@ $wantsJson = ($reqFormat === 'json')
 $wantsText = in_array($reqFormat, ['text', 'txt', 'plain'], true)
     || (bool) preg_match('~\b(curl|wget|httpie|python-requests|libwww-perl|go-http-client)\b~i', $reqAgent);
 
+// Clearnet path: resolve the visitor's IP and negotiate text/JSON. Skipped entirely over the
+// onion — there's no exit node / client IP to look up (getClientIP would be 127.0.0.1, and we
+// deliberately do NOT fall back to a server-side lookup, which would surface the SERVER's egress
+// IP and miss the whole point). Onion requests fall through to the dedicated panel in the HTML.
+if (!$onionMode) {
 // Clear the output buffer to keep stray output from the lookup functions out of the response
 ob_start();
 
@@ -123,6 +142,7 @@ if ($wantsJson) {
     ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
     exit;
 }
+} // end clearnet lookup/negotiation block (skipped over the onion)
 
 // App version = the deployed git commit. Render injects RENDER_GIT_COMMIT at runtime;
 // GIT_COMMIT can be baked at build time; otherwise it's a local/dev build.
@@ -157,9 +177,36 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
 </head>
 <body>
 <div class="container">
-    <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Toggle color theme">◐ Auto</button>
+    <?php if (!$onionMode): ?>
+        <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Toggle color theme">◐ Auto</button>
+    <?php endif; ?>
     <h1>Just the t<span class="ip-accent">IP</span></h1>
 
+    <?php if ($onionMode): ?>
+        <!-- Onion mode: reached over our Tor onion service. No exit node, no client IP — by design. -->
+        <div id="onion-side">
+            <div class="ip-info tor-detected">
+                <h2>🧅 You reached us over Tor</h2>
+                <div class="ip-row">
+                    <span class="ip-label">Your IP:</span>
+                    <span class="ip-value"><i>hidden — nothing to show</i></span>
+                </div>
+                <div class="ip-row-noborder">
+                    <span class="ip-label">Exit node:</span>
+                    <span class="ip-value"><i>none — the traffic never leaves Tor</i></span>
+                </div>
+                <p class="note-text">You're on our onion address. A Tor onion connection has no exit
+                    node, so there's no external IP for us to detect — your request reaches this app
+                    end-to-end inside Tor. No IP, no geolocation, no reverse-DNS, nothing to leak.
+                    That's the whole point.</p>
+            </div>
+            <div class="privacy-info">
+                <h2>🔒 Even more private here</h2>
+                <p class="privacy-lede">On the clearnet we already keep nothing. Over Tor there's
+                    nothing to keep in the first place — we literally can't see who you are.</p>
+            </div>
+        </div>
+    <?php else: ?>
     <div class="tab-container">
         <div class="tab active" id="server-tab">Server Detection</div>
         <div class="tab" id="client-tab">Browser Detection</div>
@@ -304,6 +351,7 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
                 to the server.</li>
         </ul>
     </div>
+    <?php endif; ?>
 
     <div class="info-footer">
         <p>This tool shows your external IP address, hostname, and detects if you're using a VPN or proxy.</p>
@@ -319,7 +367,9 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
     </div>
 </div>
 
+<?php if (!$onionMode): ?>
 <!-- External JavaScript file with enhanced security -->
 <script nonce="<?php echo htmlspecialchars($cspNonce); ?>" src="public/js/ip-finder.js"></script>
+<?php endif; ?>
 </body>
 </html>

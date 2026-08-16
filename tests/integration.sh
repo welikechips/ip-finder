@@ -192,6 +192,20 @@ else
   ok "no access logging (no visitor requests in container logs)"
 fi
 
+# 10. Onion mode: a request whose Host is a .onion renders the dedicated panel (no lookup, no
+#     clearnet tabs) and OMITS HSTS; the clearnet still sends HSTS. (tor itself isn't running here
+#     — ENABLE_ONION is off — but the Host-based rendering path is exercised directly.)
+onion_body=$(curl -s -A "$UA_HTML" -H "Host: exampleonion0000000000000000000000000000000000000000000d.onion" "$BASE/")
+echo "$onion_body" | grep -qi 'reached us over Tor' \
+  && ok "onion Host -> dedicated onion panel" || bad "onion panel not rendered for .onion Host"
+echo "$onion_body" | grep -q 'id="server-tab"' \
+  && bad "onion page leaked the clearnet lookup UI" || ok "onion page omits the clearnet lookup UI"
+onion_hdr=$(curl -s -D - -o /dev/null -A "$UA_HTML" -H "Host: abc.onion" "$BASE/")
+echo "$onion_hdr" | grep -qi 'Strict-Transport-Security' \
+  && bad "HSTS sent over the onion (should be omitted)" || ok "no HSTS over the onion"
+curl -s -D - -o /dev/null -A "$UA_HTML" -H "True-Client-IP: 203.0.113.9" "$BASE/" | grep -qi 'Strict-Transport-Security' \
+  && ok "HSTS still present on the clearnet" || bad "HSTS missing on the clearnet"
+
 echo
 echo "==> Integration: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] || exit 1
