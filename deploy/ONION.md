@@ -76,11 +76,23 @@ starts tor. The `.onion` is printed to the service logs (`onion: serving <addr>.
 
 ## Keep it warm
 
-- **In-repo:** `.github/workflows/keepalive.yml` pings the clearnet URL every ~10 min (best-effort;
-  GitHub cron drifts).
-- **Recommended:** an external **UptimeRobot** monitor (free, 5-min) on
-  `https://ip.jiveturkey.rocks/?format=text`. More punctual than GitHub cron against the 15-min idle
-  window.
+- **Primary — UptimeRobot (configured):** an external HTTP(s) monitor keeps the free-tier instance
+  from idling (which would spin `tor` down). More punctual than GitHub cron against the 15-min idle
+  window. Current monitor:
+
+  | Field | Value |
+  |-------|-------|
+  | Friendly name | `Just the tIP — onion keep-warm` |
+  | Type | HTTP(s) |
+  | URL | `https://ip.jiveturkey.rocks/?format=text` (cheap text path — a tiny 200 that resets the idle timer) |
+  | Interval | 5 min (free-tier minimum) |
+
+  Managed in the UptimeRobot account (dashboard or the `/v2/newMonitor` API); the API key is a secret
+  and lives only there, never in this repo. Down-alerts are expected to blip occasionally — that's the
+  keep-warm-hack tax, not a real outage.
+- **Backup — in-repo:** `.github/workflows/keepalive.yml` pings the same URL every ~10 min. Best-effort
+  only (GitHub cron drifts 10–15 min, too loose to rely on alone), so it's the fallback, not the
+  primary.
 
 ## Verify
 
