@@ -50,14 +50,29 @@ Back the key up **encrypted and offline**. It is unrecoverable if lost.
 
 ## Render setup (dashboard)
 
-1. **Secret File** — add a secret file named `hs_ed25519_secret_key` with the key's contents. Render
-   mounts it at `/etc/secrets/hs_ed25519_secret_key` (the entrypoint's default `ONION_KEY_FILE`).
-2. **Environment** —
-   - `ENABLE_ONION=1`
-   - `ONION_ADDRESS=<your-addr>.onion`  (makes the clearnet site send the `Onion-Location` header so
-     Tor Browser auto-offers the onion)
-3. **Deploy.** On boot the entrypoint installs the key, renders `torrc` with the live `$PORT`, and
-   starts tor. The `.onion` is printed to the service logs (`onion: serving <addr>.onion`).
+Provide the key one of two ways. **The env-var route is easiest — it works on every Render plan/UI
+and is set exactly like any other env var. Use it if you can't find "Secret Files."**
+
+**Option A — env var (recommended, no Secret File needed):**
+
+```bash
+# copy the base64 of the key to your clipboard (macOS) — the value never needs to be pasted anywhere
+# but the Render env-var field:
+base64 -i ~/ip-finder-onion-key/<addr>.onion/hs_ed25519_secret_key | pbcopy
+```
+
+Then in the service's **Environment** tab add:
+- `ONION_KEY_B64` = (paste the base64) — the entrypoint decodes it into the hidden-service dir
+- `ENABLE_ONION` = `1`
+- `ONION_ADDRESS` = `<your-addr>.onion`  (makes the clearnet site send the `Onion-Location` header)
+
+**Option B — Secret File:** in the service's **Environment** tab, scroll to the **Secret Files**
+card → **Add Secret File** → filename `hs_ed25519_secret_key`, contents = the key file. Render mounts
+it at `/etc/secrets/hs_ed25519_secret_key` (the entrypoint default). Still set `ENABLE_ONION=1` +
+`ONION_ADDRESS`. If both a Secret File and `ONION_KEY_B64` are present, the env var wins.
+
+Then **Deploy.** On boot the entrypoint installs the key, renders `torrc` with the live `$PORT`, and
+starts tor. The `.onion` is printed to the service logs (`onion: serving <addr>.onion`).
 
 ## Keep it warm
 
