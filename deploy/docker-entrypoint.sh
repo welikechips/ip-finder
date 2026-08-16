@@ -18,11 +18,20 @@ if [ "${ENABLE_ONION:-0}" = "1" ]; then
     HS_DIR=/var/lib/tor/hidden_service
     KEY_SRC="${ONION_KEY_FILE:-/etc/secrets/hs_ed25519_secret_key}"
     mkdir -p "$HS_DIR"
-    if [ -f "$KEY_SRC" ]; then
+    # The hidden-service key can come from EITHER a base64 env var (ONION_KEY_B64 — works on any
+    # Render plan/UI, set it like any other env var; no Secret File needed) OR a mounted Secret
+    # File. The env var wins if both are present. Neither -> tor grinds a throwaway address.
+    if [ -n "${ONION_KEY_B64:-}" ]; then
+        if printf '%s' "$ONION_KEY_B64" | base64 -d > "$HS_DIR/hs_ed25519_secret_key" 2>/dev/null; then
+            echo "onion: installed hidden-service key from ONION_KEY_B64" >&2
+        else
+            echo "onion: ONION_KEY_B64 is set but failed to base64-decode — check the value" >&2
+        fi
+    elif [ -f "$KEY_SRC" ]; then
         cp "$KEY_SRC" "$HS_DIR/hs_ed25519_secret_key"
         echo "onion: installed hidden-service key from $KEY_SRC" >&2
     else
-        echo "onion: no key at $KEY_SRC — tor will generate a throwaway (non-stable) address" >&2
+        echo "onion: no key (ONION_KEY_B64 unset, no file at $KEY_SRC) — tor will generate a throwaway address" >&2
     fi
     # tor refuses to start unless the key dir is tor-owned and mode 700.
     chown -R debian-tor:debian-tor /var/lib/tor 2>/dev/null || true
