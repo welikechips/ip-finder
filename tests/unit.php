@@ -206,5 +206,15 @@ if (class_exists('MaxMind\\Db\\Reader')) {
     echo "  SKIP  maxminddb extension not loaded (fixture reader needs the built image)\n";
 }
 
+echo "isOnionHost (Tor onion request detection)\n";
+check(isOnionHost('abcdefghijklmnop234567xyz.onion') === true,    'plain .onion host -> true');
+check(isOnionHost('ABCDEF.onion') === true,                       'uppercase .onion -> true (case-insensitive)');
+check(isOnionHost('abc.onion:80') === true,                       '.onion with :port -> true');
+check(isOnionHost('ip.jiveturkey.rocks') === false,               'clearnet host -> false');
+check(isOnionHost('evil.onion.example.com') === false,            '.onion not at the end -> false');
+check(isOnionHost('notonion') === false,                          'bare "notonion" -> false');
+check(isOnionHost('') === false,                                  'empty host -> false');
+check(isOnionHost(null) === false,                                'null host -> false');
+
 echo "\n" . $GLOBALS['__tests'] . " checks, " . $GLOBALS['__fails'] . " failed\n";
 exit($GLOBALS['__fails'] > 0 ? 1 : 0);

@@ -62,6 +62,18 @@ function getClientIP() {
     return validateIP($remoteAddr) ? $remoteAddr : '0.0.0.0';
 }
 
+// True when the request arrived over our Tor onion service. tor sets the HTTP Host to the
+// <addr>.onion; an onion connection has NO exit node and NO client IP, so index.php renders a
+// dedicated "nothing to show" panel instead of a lookup. Pure string check, unit-testable.
+function isOnionHost($host) {
+    if (!is_string($host) || $host === '') {
+        return false;
+    }
+    $host = strtolower(trim($host));
+    $host = preg_replace('/:\d+$/', '', $host); // strip a :port if present
+    return substr($host, -6) === '.onion';
+}
+
 // Server-side fallback list for getExternalIP() — used only when the client IP isn't public
 // (e.g. local dev with no proxy in front). The browser never reaches these, so they don't
 // drive the CSP.

@@ -1,0 +1,14 @@
+# Tor onion-service config template. The entrypoint substitutes __PORT__ with the port Apache
+# actually listens on (Render injects $PORT) and writes the result to /etc/tor/torrc, then starts
+# tor only when ENABLE_ONION=1. We are NOT a Tor client here — SocksPort 0 disables that.
+SocksPort 0
+Log notice stderr
+DataDirectory /var/lib/tor
+User debian-tor
+
+# v3 onion service pointing at the local Apache. The address is derived from the key in
+# HiddenServiceDir; the entrypoint installs a provided key there (from a Render Secret File) so the
+# address stays STABLE across restarts. Without a provided key, tor generates a throwaway one.
+HiddenServiceDir /var/lib/tor/hidden_service
+HiddenServiceVersion 3
+HiddenServicePort 80 127.0.0.1:__PORT__
