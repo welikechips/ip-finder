@@ -22,13 +22,18 @@ services:
       # ipwho.is. sync: false = the value is set in the Render dashboard, never committed here.
       - key: IPINFO_TOKEN
         sync: false
-      # --- Tor onion service (see deploy/ONION.md). Both values below are NON-secret and safe to
-      # commit — the private hidden-service key is NOT here; it's a Render Secret File named
-      # hs_ed25519_secret_key (mounted at /etc/secrets/...). ORDER MATTERS: upload that Secret File
-      # BEFORE this takes effect, or tor grinds a throwaway address instead of the vanity one.
+      # --- Tor onion service (see deploy/ONION.md). ENABLE_ONION + ONION_ADDRESS are NON-secret and
+      # committed here; the private hidden-service key is NOT — it's the sync:false ONION_KEY_B64
+      # below (base64 of hs_ed25519_secret_key), set in the dashboard. ORDER MATTERS: set
+      # ONION_KEY_B64 BEFORE this takes effect, or tor grinds a throwaway address, not the vanity one.
       - key: ENABLE_ONION
         value: "1"
-      # Public v3 onion address (derived from the Secret File key). The clearnet site advertises it
-      # to Tor Browser via the Onion-Location header.
+      # Public v3 onion address (derived from the key). The clearnet site advertises it to Tor
+      # Browser via the Onion-Location header.
       - key: ONION_ADDRESS
         value: jiveserzcd3zj6ptn3o3cr5l35pfibmw4vgzvkjjsvuwwuknnnptc6qd.onion
+      # Base64 of the hidden-service secret key. SECRET — sync:false, set the value in the Render
+      # dashboard, never commit it. (Alternatively, a Secret File named hs_ed25519_secret_key; the
+      # env var wins if both are present. See deploy/ONION.md.)
+      - key: ONION_KEY_B64
+        sync: false
