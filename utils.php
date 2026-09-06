@@ -13,6 +13,38 @@ function validateIP($ip) {
     return true;
 }
 
+// Which IP family is this? Returns 6 for IPv6, 4 for IPv4, or null if it isn't a valid IP.
+// Pure + unit-testable. Used to label the reported address: the server only ever sees ONE
+// family — whichever the connection arrived on — so the page names it (and notes that from a
+// v4 connection we can't see the visitor's v6, and vice versa).
+function ipVersion($ip) {
+    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+        return 6;
+    }
+    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+        return 4;
+    }
+    return null;
+}
+
+// Build the reverse-DNS PTR query name for an IP: the N.N.N.N.in-addr.arpa form for IPv4, or
+// the 32-nibble ...ip6.arpa form for IPv6 (inet_pton -> hex nibbles, reversed). Returns null
+// for anything that isn't a valid address. Pure — no I/O — so it's unit-testable.
+function reverseDnsName($ip) {
+    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+        return implode('.', array_reverse(explode('.', $ip))) . '.in-addr.arpa';
+    }
+    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+        $packed = @inet_pton($ip);
+        if ($packed === false) {
+            return null;
+        }
+        // 16 bytes -> 32 hex nibbles, reversed and dotted, e.g. ...1.0.0.2.ip6.arpa
+        return implode('.', array_reverse(str_split(bin2hex($packed)))) . '.ip6.arpa';
+    }
+    return null;
+}
+
 // Check if an IP is a local network IP
 function isLocalIP($ip) {
     $localIPRanges = [
@@ -366,24 +398,24 @@ function resolveHostname($ip) {
         return $hostname;
     }
 
-    // Method 2: Use DNS lookup with PTR record
+    // Method 2: explicit PTR lookup. reverseDnsName() picks in-addr.arpa (v4) or ip6.arpa (v6),
+    // so this path works for both families, not just IPv4.
     try {
-        // Create reverse DNS lookup query
-        $reversedIP = implode('.', array_reverse(explode('.', $ip))) . '.in-addr.arpa';
-
-        // Attempt PTR record lookup
-        $dnsRecords = dns_get_record($reversedIP, DNS_PTR);
-
-        if (!empty($dnsRecords) && isset($dnsRecords[0]['target'])) {
-            return $dnsRecords[0]['target'];
+        $reversedIP = reverseDnsName($ip);
+        if ($reversedIP !== null) {
+            $dnsRecords = dns_get_record($reversedIP, DNS_PTR);
+            if (!empty($dnsRecords) && isset($dnsRecords[0]['target'])) {
+                return $dnsRecords[0]['target'];
+            }
         }
     } catch (Exception $e) {
         // Silent fail, continue to next method
     }
 
     // Method 3: AWS EC2 hostnames often follow ec2-IP-ADDRESS.compute-X.amazonaws.com (dashes
-    // instead of dots); forward-resolve the guess and confirm it maps back to the IP.
-    if (strpos($ip, '.compute-') === false) { // Avoid infinite recursion
+    // instead of dots); forward-resolve the guess and confirm it maps back to the IP. IPv4-only
+    // — the dash-substitution scheme doesn't apply to v6 addresses.
+    if (strpos($ip, ':') === false && strpos($ip, '.compute-') === false) { // v4 only; avoid recursion
         $dashIP = str_replace('.', '-', $ip);
         $possibleEC2Hostname = "ec2-{$dashIP}.compute-1.amazonaws.com";
 
