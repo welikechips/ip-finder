@@ -216,5 +216,22 @@ check(isOnionHost('notonion') === false,                          'bare "notonio
 check(isOnionHost('') === false,                                  'empty host -> false');
 check(isOnionHost(null) === false,                                'null host -> false');
 
+echo "ipVersion (address family label)\n";
+is_eq(ipVersion('192.0.2.1'), 4,                  'TEST-NET-1 IPv4 -> 4');
+is_eq(ipVersion('203.0.113.55'), 4,               'TEST-NET-3 IPv4 -> 4');
+is_eq(ipVersion('2001:db8::1'), 6,                'documentation IPv6 -> 6');
+is_eq(ipVersion('2001:db8:0:0:0:0:0:1'), 6,       'expanded documentation IPv6 -> 6');
+is_eq(ipVersion('not-an-ip'), null,               'garbage -> null');
+is_eq(ipVersion(''), null,                        'empty string -> null');
+
+echo "reverseDnsName (PTR query name per family)\n";
+is_eq(reverseDnsName('192.0.2.1'), '1.2.0.192.in-addr.arpa',   'IPv4 -> reversed in-addr.arpa');
+is_eq(
+    reverseDnsName('2001:db8::1'),
+    '1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa',
+    'IPv6 -> 32-nibble ip6.arpa'
+);
+is_eq(reverseDnsName('nope'), null,                            'invalid IP -> null');
+
 echo "\n" . $GLOBALS['__tests'] . " checks, " . $GLOBALS['__fails'] . " failed\n";
 exit($GLOBALS['__fails'] > 0 ? 1 : 0);

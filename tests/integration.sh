@@ -132,6 +132,14 @@ curl -s -A "$UA_HTML" -H "True-Client-IP: 8.8.8.8" "$BASE/" | grep -qi 'datacent
 curl -s -H "True-Client-IP: 8.8.8.8" "$BASE/?format=json" | grep -q '"flags"' \
   && ok "JSON includes a flags array" || bad "JSON flags array missing"
 
+# 6d. IP family label — an IPv6 client (RFC 3849 doc range) is reported as v6 in JSON + on the page
+curl -s -H "True-Client-IP: 2001:db8::1" "$BASE/?format=json" | grep -q '"version": 6' \
+  && ok "JSON reports IPv6 family (version: 6)" || bad "JSON version not 6 for an IPv6 client"
+curl -s -A "$UA_HTML" -H "True-Client-IP: 2001:db8::1" "$BASE/" | grep -q 'ip-badge-v6' \
+  && ok "IPv6 badge rendered on the page" || bad "IPv6 badge missing for an IPv6 client"
+curl -s -H "True-Client-IP: 203.0.113.7" "$BASE/?format=json" | grep -q '"version": 4' \
+  && ok "JSON reports IPv4 family (version: 4)" || bad "JSON version not 4 for an IPv4 client"
+
 # 7. Security headers present on /
 headers=$(GET -D - -o /dev/null "$BASE/")
 for h in "Content-Security-Policy" "X-Content-Type-Options: nosniff" "X-Frame-Options: DENY" "Strict-Transport-Security: max-age="; do

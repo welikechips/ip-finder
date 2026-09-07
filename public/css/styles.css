@@ -219,6 +219,26 @@ h2 {
     gap: 8px;
 }
 
+/* IP family tag (IPv4 / IPv6) sitting next to the address — a calm neutral pill, deliberately
+   quieter than the warning-styled anonymity flags. IPv6 gets a green accent as a small nod. */
+.ip-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    font-family: inherit;
+    border: 1px solid var(--border-2);
+    background-color: var(--surface-2);
+    color: var(--text-muted);
+}
+
+.ip-badge-v6 {
+    border-color: var(--accent-green);
+    color: var(--accent-green);
+}
+
 .copy-btn {
     background: transparent;
     border: 1px solid var(--border-2);

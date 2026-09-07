@@ -127,11 +127,16 @@ foreach ($ipFlags as $f) {
     if (($f['type'] ?? '') === 'tor') { $isTorExit = true; break; }
 }
 
+// Which family did the visitor connect on? We only ever see one (the connection's family), so we
+// label it and note we can't see the other. null when the IP is Unknown (no valid address).
+$ipFamily = $externalIPData['success'] ? ipVersion($externalIP) : null;
+
 // JSON for API clients (?format=json or Accept: application/json).
 if ($wantsJson) {
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode([
         'ip'       => $externalIP,
+        'version'  => $ipFamily,
         'hostname' => $externalHostname,
         'city'     => isset($ipInfo['city']) ? $ipInfo['city'] : null,
         'region'   => isset($ipInfo['region']) ? $ipInfo['region'] : null,
@@ -222,9 +227,18 @@ $appVersion = $appCommit !== '' ? substr($appCommit, 0, 7) : 'dev';
                     <span class="ip-label">IP Address:</span>
                     <span class="ip-value-group">
                         <span class="ip-value" id="server-ip-value"><?php echo htmlspecialchars($externalIP); ?></span>
+                        <?php if ($ipFamily): ?>
+                            <span class="ip-badge ip-badge-v<?php echo $ipFamily; ?>" title="This address is IPv<?php echo $ipFamily; ?>">IPv<?php echo $ipFamily; ?></span>
+                        <?php endif; ?>
                         <button type="button" class="copy-btn" data-copy="server-ip-value" aria-label="Copy IP address" title="Copy IP">📋</button>
                     </span>
                 </div>
+
+                <?php if ($ipFamily): ?>
+                    <p class="note-text">You connected over <strong>IPv<?php echo $ipFamily; ?></strong>. This server
+                        only sees the address family your connection uses — from an IPv<?php echo $ipFamily; ?>
+                        connection we can't see your IPv<?php echo $ipFamily === 6 ? '4' : '6'; ?> address.</p>
+                <?php endif; ?>
 
                 <?php if (!empty($ipFlags)): ?>
                     <div class="ip-flags">
