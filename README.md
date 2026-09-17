@@ -2,7 +2,8 @@
 
 A small PHP web app that shows a visitor their external IP, reverse-DNS hostname, geolocation, ASN / org, and
 VPN / datacenter / Tor-exit hints — plus a client-side WebRTC leak check. Live at **https://ip.jiveturkey.rocks**, and
-over Tor at `jiveserzcd3zj6ptn3o3cr5l35pfibmw4vgzvkjjsvuwwuknnnptc6qd.onion` (see [Tor onion service](#tor-onion-service-optional)).
+over Tor at `jiveserzcd3zj6ptn3o3cr5l35pfibmw4vgzvkjjsvuwwuknnnptc6qd.onion` (
+see [Tor onion service](#tor-onion-service-optional)).
 
 The repo also carries `tor_check.py`, a standalone Python CLI (Tor / DNS-leak diagnostics) baked into the same Docker
 image but **not** part of the website.
@@ -16,7 +17,7 @@ image but **not** part of the website.
 - **VPN / datacenter / Tor-exit flags** (the Tor-exit flag renders loud — a filled `🧅` badge + a purple card
   highlight), a **WebRTC leak check**, **dark-by-default theme** (light / auto still a click away), and
   **copy-to-clipboard**.
-- **Terminal + JSON API** — `curl ip.jiveturkey.rocks` → bare IP; `?format=json` → structured JSON.
+- **Terminal + JSON API** — `curl -L ip.jiveturkey.rocks` → bare IP; `?format=json` → structured JSON.
 - **Privacy** — no database, no persistence, Apache access logging disabled (test-guarded); a visible privacy card
   states what's kept (nothing) and where lookups happen.
 - **Optional Tor onion service** — the same image can serve itself over a `.onion`, where there's no exit node and no IP
@@ -36,7 +37,8 @@ make         # list all targets
 
 The page offers two detection modes:
 
-- **Server Detection** (default) — the server reports the IP your connection presents to it. Behind the Render/Cloudflare
+- **Server Detection** (default) — the server reports the IP your connection presents to it. Behind the
+  Render/Cloudflare
   edge it reads the real client IP from `True-Client-IP` / `CF-Connecting-IP` or the first `X-Forwarded-For` hop; for
   local/direct access it falls back to a server-side lookup against public IP APIs.
 - **Browser Detection** — a live re-check that fetches the app's **own** same-origin `?format=text` echo endpoint (no
@@ -63,10 +65,10 @@ it never sees the page or its data.
 
 ### Configuration (Render env vars — both optional)
 
-| Var | Purpose |
-|-----|---------|
+| Var                   | Purpose                                                                                                                                                                |
+|-----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `MAXMIND_LICENSE_KEY` | Bakes local GeoLite2 at build → geolocation resolves on-box (free [GeoLite2](https://www.maxmind.com/en/geolite2/signup) key). Without it, geo uses the HTTP fallback. |
-| `IPINFO_TOKEN` | Authenticates the ipinfo.io **fallback** for reliability from datacenter egress. Only matters when the local DB isn't baked. |
+| `IPINFO_TOKEN`        | Authenticates the ipinfo.io **fallback** for reliability from datacenter egress. Only matters when the local DB isn't baked.                                           |
 
 ### Tor onion service (optional)
 
@@ -78,10 +80,10 @@ generation with `mkp224o`): [`deploy/ONION.md`](deploy/ONION.md).**
 
 Enable it with three Render settings (the key is never committed):
 
-| Var | Purpose |
-|-----|---------|
-| `ENABLE_ONION` | `1` to start `tor` alongside Apache (default `0` = off). |
-| `ONION_ADDRESS` | Your `<addr>.onion` — makes the clearnet site send the `Onion-Location` header so Tor Browser offers it. |
+| Var             | Purpose                                                                                                                                  |
+|-----------------|------------------------------------------------------------------------------------------------------------------------------------------|
+| `ENABLE_ONION`  | `1` to start `tor` alongside Apache (default `0` = off).                                                                                 |
+| `ONION_ADDRESS` | Your `<addr>.onion` — makes the clearnet site send the `Onion-Location` header so Tor Browser offers it.                                 |
 | `ONION_KEY_B64` | Base64 of the hidden-service secret key (or provide a Secret File `hs_ed25519_secret_key`). Secret — set in the dashboard, never in git. |
 
 > **Honest caveat:** on Render's free tier this is a *keep-warm hack*, not HA — idle spin-down kills `tor` and nothing
@@ -91,19 +93,26 @@ Enable it with three Render settings (the key is never committed):
 ### Terminal / API
 
 ```bash
-curl ip.jiveturkey.rocks                 # -> bare IP as text/plain (curl/wget/etc.)
-curl "ip.jiveturkey.rocks?format=json"   # -> JSON: ip, hostname, city, region, country, org, timezone, flags[]
+# curl defaults to http:// (port 80). Render's edge 301-redirects HTTP → HTTPS, so pass -L to follow it
+# (or use the https:// URL directly). Without -L you get the redirect notice, not the IP.
+curl -L ip.jiveturkey.rocks                 # -> bare IP as text/plain (curl/wget/etc.)
+curl -L "ip.jiveturkey.rocks?format=json"   # -> JSON: ip, hostname, city, region, country, org, timezone, flags[]
 ```
 
 Browsers (any `text/html` client) get the full HTML page; `Accept: application/json` also returns JSON.
+
+> **Why `-L`?** The bare-`curl` request lands on `http://` (port 80), and Render's Cloudflare edge answers with a
+> `301` to HTTPS *before* the app is reached — so `-L` (follow redirects) is what gets you the IP. Truly flag-free
+> `curl ip.jiveturkey.rocks` would require serving a `200` on port 80, which Render's forced-HTTPS edge doesn't allow
+> (it'd need an always-on box we control the edge on — the icanhazip.com pattern).
 
 ## Security
 
 - **Content-Security-Policy** — `connect-src 'self'` + the WebRTC STUN server, `frame-src 'none'`, and a **per-request
   script nonce** (distinct from the CSRF token).
 - **CSRF token** on the refresh form (validated on POST).
-- **Per-IP rate limiting** — a file-bucket keyed on the client IP (not the session, so it can't be bypassed by dropping a
-  cookie); fails open but logs the degrade.
+- **Per-IP rate limiting** — a file-bucket keyed on the client IP (not the session, so it can't be bypassed by dropping
+  a cookie); fails open but logs the degrade.
 - **HSTS** (clearnet host only — meaningless over the TLS-less onion, so it's omitted there) plus `X-Frame-Options`,
   `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`. The clearnet also sends an `Onion-Location` header
   when the onion is configured.
